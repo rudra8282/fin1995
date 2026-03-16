@@ -783,11 +783,11 @@ function faap_admin_manage_forms() {
 
     // Ensure valid JSON for the editor defaults.
     $personalData = json_decode($personal, true);
-    if (json_last_error() !== JSON_ERROR_NONE || !is_array($personalData)) {
+    if (json_last_error() !== JSON_ERROR_NONE || !is_array($personalData) || count($personalData) === 0) {
         $personalData = faap_get_default_form_steps();
     }
     $businessData = json_decode($business, true);
-    if (json_last_error() !== JSON_ERROR_NONE || !is_array($businessData)) {
+    if (json_last_error() !== JSON_ERROR_NONE || !is_array($businessData) || count($businessData) === 0) {
         $businessData = faap_get_default_form_steps();
     }
 
@@ -845,46 +845,47 @@ function faap_admin_manage_forms() {
     </div>
 
     <script>
-    const personalData = <?php echo json_encode(json_decode($personalJson, true) ?: [], JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT); ?>;
-    const businessData = <?php echo json_encode(json_decode($businessJson, true) ?: [], JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT); ?>;
+    document.addEventListener('DOMContentLoaded', () => {
+      const personalData = <?php echo json_encode(json_decode($personalJson, true) ?: [], JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT); ?>;
+      const businessData = <?php echo json_encode(json_decode($businessJson, true) ?: [], JSON_UNESCAPED_SLASHES | JSON_PRETTY_PRINT); ?>;
 
-    function createFieldHtml(stepIndex, fieldIndex, field, baseId) {
-      return `
-        <div class="faap-field" style="border:1px dashed #d5d5d5; padding:8px; margin-bottom:6px; border-radius:6px; background:#f8f8f8;">
-          <div style="display:flex;gap:8px; align-items:center; margin-bottom:4px;">
-            <small style="font-weight:bold;">Field ${fieldIndex + 1}</small>
-            <button type="button" data-remove-field="${stepIndex}:${fieldIndex}" class="button button-link" style="font-size:11px;">Remove</button>
+      function createFieldHtml(stepIndex, fieldIndex, field, baseId) {
+        return `
+          <div class="faap-field" style="border:1px dashed #d5d5d5; padding:8px; margin-bottom:6px; border-radius:6px; background:#f8f8f8;">
+            <div style="display:flex;gap:8px; align-items:center; margin-bottom:4px;">
+              <small style="font-weight:bold;">Field ${fieldIndex + 1}</small>
+              <button type="button" data-remove-field="${stepIndex}:${fieldIndex}" class="button button-link" style="font-size:11px;">Remove</button>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px; margin-bottom:4px;">
+              <input type="text" placeholder="label" data-field-label="${stepIndex}:${fieldIndex}" value="${field.label || ''}" style="width:100%;" />
+              <input type="text" placeholder="name" data-field-name="${stepIndex}:${fieldIndex}" value="${field.name || ''}" style="width:100%;" />
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px; margin-bottom:4px;">
+              <select data-field-type="${stepIndex}:${fieldIndex}" style="width:100%;">
+                <option value="text" ${field.type === 'text' ? 'selected' : ''}>text</option>
+                <option value="number" ${field.type === 'number' ? 'selected' : ''}>number</option>
+                <option value="date" ${field.type === 'date' ? 'selected' : ''}>date</option>
+                <option value="select" ${field.type === 'select' ? 'selected' : ''}>select</option>
+                <option value="radio" ${field.type === 'radio' ? 'selected' : ''}>radio</option>
+                <option value="textarea" ${field.type === 'textarea' ? 'selected' : ''}>textarea</option>
+                <option value="email" ${field.type === 'email' ? 'selected' : ''}>email</option>
+                <option value="file" ${field.type === 'file' ? 'selected' : ''}>file</option>
+              </select>
+              <select data-field-width="${stepIndex}:${fieldIndex}" style="width:100%;">
+                <option value="full" ${field.width === 'full' ? 'selected' : ''}>full</option>
+                <option value="half" ${field.width === 'half' ? 'selected' : ''}>half</option>
+              </select>
+            </div>
+            <div style="display:flex;gap:8px;">
+              <label style="font-size:11px;">required <input type="checkbox" data-field-required="${stepIndex}:${fieldIndex}" ${field.required ? 'checked' : ''} /></label>
+            </div>
           </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px; margin-bottom:4px;">
-            <input type="text" placeholder="label" data-field-label="${stepIndex}:${fieldIndex}" value="${field.label || ''}" style="width:100%;" />
-            <input type="text" placeholder="name" data-field-name="${stepIndex}:${fieldIndex}" value="${field.name || ''}" style="width:100%;" />
-          </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px; margin-bottom:4px;">
-            <select data-field-type="${stepIndex}:${fieldIndex}" style="width:100%;">
-              <option value="text" ${field.type === 'text' ? 'selected' : ''}>text</option>
-              <option value="number" ${field.type === 'number' ? 'selected' : ''}>number</option>
-              <option value="date" ${field.type === 'date' ? 'selected' : ''}>date</option>
-              <option value="select" ${field.type === 'select' ? 'selected' : ''}>select</option>
-              <option value="radio" ${field.type === 'radio' ? 'selected' : ''}>radio</option>
-              <option value="textarea" ${field.type === 'textarea' ? 'selected' : ''}>textarea</option>
-              <option value="email" ${field.type === 'email' ? 'selected' : ''}>email</option>
-              <option value="file" ${field.type === 'file' ? 'selected' : ''}>file</option>
-            </select>
-            <select data-field-width="${stepIndex}:${fieldIndex}" style="width:100%;">
-              <option value="full" ${field.width === 'full' ? 'selected' : ''}>full</option>
-              <option value="half" ${field.width === 'half' ? 'selected' : ''}>half</option>
-            </select>
-          </div>
-          <div style="display:flex;gap:8px;">
-            <label style="font-size:11px;">required <input type="checkbox" data-field-required="${stepIndex}:${fieldIndex}" ${field.required ? 'checked' : ''} /></label>
-          </div>
-        </div>
-      `;
-    }
+        `;
+      }
 
-    function renderEditor(data, containerId) {
-      const container = document.getElementById(containerId);
-      container.innerHTML = '';
+      function renderEditor(data, containerId) {
+        const container = document.getElementById(containerId);
+        container.innerHTML = '';
 
       data.forEach((step, stepIndex) => {
         const stepDiv = document.createElement('div');
@@ -1101,6 +1102,7 @@ function faap_admin_manage_forms() {
     });
 
     renderAll();
+    });
     </script>
     <?php
 }
