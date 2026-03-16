@@ -883,17 +883,49 @@ function faap_admin_submissions() {
         exit;
     }
 
+    if (!empty($_GET['export_all_pdf'])) {
+        $rows = $wpdb->get_results("SELECT * FROM $table_apps ORDER BY submitted_at DESC", ARRAY_A);
+        $html = '<html><head><meta charset="utf-8"><style>body{font-family:Arial,sans-serif;padding:20px;} .entry{border:1px solid #ccc;padding:12px;margin-bottom:12px;border-radius:8px;} .entry h3{margin:0 0 6px;color:#111;} .entry p{margin:3px 0;color:#333;}</style></head><body><h1>All Submissions</h1>';
+        foreach ($rows as $row) {
+            $form_data = json_decode($row['form_data'], true);
+            $app_id = $form_data['applicationId'] ?? 'N/A';
+            $name = $form_data['fullName'] ?? $form_data['companyName'] ?? $form_data['signatoryName'] ?? 'N/A';
+            $html .= '<div class="entry"><h3>Application ID: ' . esc_html($app_id) . '</h3><p><strong>Name:</strong> ' . esc_html($name) . '</p><p><strong>Type:</strong> ' . esc_html($row['type']) . '</p><p><strong>Account Type:</strong> ' . esc_html($row['account_type_id']) . '</p><p><strong>Status:</strong> ' . esc_html($row['status']) . '</p></div>';
+        }
+        $html .= '</body></html>';
+
+        $tmp_html = wp_tempnam('faap-all-submissions') . '.html';
+        $tmp_pdf = wp_tempnam('faap-all-submissions') . '.pdf';
+        file_put_contents($tmp_html, $html);
+        $cmd = 'wkhtmltopdf ' . escapeshellarg($tmp_html) . ' ' . escapeshellarg($tmp_pdf);
+        exec($cmd, $out, $code);
+        if ($code === 0 && file_exists($tmp_pdf)) {
+            header('Content-Type: application/pdf');
+            header('Content-Disposition: attachment; filename="faap-all-submissions-' . date('YmdHis') . '.pdf"');
+            readfile($tmp_pdf);
+            unlink($tmp_html);
+            unlink($tmp_pdf);
+            exit;
+        }
+        // fallback if PDF conversion fails
+        header('Content-Type: text/html; charset=utf-8');
+        echo $html;
+        unlink($tmp_html);
+        exit;
+    }
+
     $rows = $wpdb->get_results("SELECT * FROM $table_apps ORDER BY submitted_at DESC");
     ?>
     <div class="wrap faap-admin">
         <div class="faap-header" style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;flex-wrap:wrap;">
             <div>
-              <h1 style="font-family: 'Alegreya', serif; color: #0a192f; margin: 0;">Application Submissions</h1>
-              <p style="color: #666; margin: 5px 0 0;">Manage and review submitted applications</p>
+              <h1 style="font-family: 'Alegreya', serif; margin: 0; background: linear-gradient(90deg, #f6e05e, #fbbf24, #f59e0b); -webkit-background-clip: text; color: transparent;">Application Submissions</h1>
+              <p style="color: #f3f4f6; margin: 5px 0 0;">Manage and review submitted applications</p>
             </div>
             <div style="display:flex;gap:8px;align-items:center;">
               <a class="button button-primary" href="?page=faap-admin&export_csv=1">Export CSV</a>
-              <span style="font-size:12px;color:#444;">Download all submissions as CSV</span>
+              <a class="button button-primary" href="?page=faap-admin&export_all_pdf=1">Download all submissions PDF</a>
+              <span style="font-size:12px;color:#fff;">Download all submissions as CSV</span>
             </div>
         </div>
         <div class="faap-content">
@@ -923,7 +955,7 @@ function faap_admin_submissions() {
                         <td><span class="faap-status"><?php echo esc_html($row->status); ?></span></td>
                         <td><?php echo $row->submitted_at; ?></td>
                         <td>
-                            <button class="button button-small faap-btn" onclick='document.getElementById("faap-details-rows").value = JSON.stringify(<?php echo wp_json_encode($form_data); ?>, null, 2); document.getElementById("faap-details-id").textContent = "Application " + <?php echo json_encode($app_id); ?>; document.getElementById("faap-preview-email").href = "?page=faap-admin&preview_email=1&id=" + <?php echo json_encode($row->id); ?>; document.getElementById("faap-preview-pdf").href = "?page=faap-admin&preview_pdf=1&id=" + <?php echo json_encode($row->id); ?>;'>View Details</button>
+                            <button class="button button-small faap-btn" onclick='document.getElementById("faap-details-summary").textContent = "Selected Application: " + <?php echo json_encode($app_id); ?> + " - " + <?php echo json_encode($app_name); ?> + ". Use the download button to get PDF."; document.getElementById("faap-details-id").textContent = "Application " + <?php echo json_encode($app_id); ?>; document.getElementById("faap-preview-pdf").href = "?page=faap-admin&preview_pdf=1&id=" + <?php echo json_encode($row->id); ?>;'>View Details</button>
                         </td>
                     </tr>
                     <?php endforeach; else: ?>
@@ -934,18 +966,17 @@ function faap_admin_submissions() {
             <div class="faap-details-panel">
                 <h2 id="faap-details-id">Application Details</h2>
                 <div style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap;">
-                  <a id="faap-preview-email" class="button button-primary" target="_blank" href="?page=faap-admin">Preview Email</a>
-                  <a id="faap-preview-pdf" class="button button-primary" target="_blank" href="?page=faap-admin">Download PDF</a>
+                  <a id="faap-preview-pdf" class="button button-primary" target="_blank" href="?page=faap-admin">Download application PDF</a>
                 </div>
-                <textarea id="faap-details-rows" readonly style="width:100%;height:260px;border:1px solid #ccc;padding:10px;border-radius:6px;background:#f9fbff;color:#111;"></textarea>
+                <div id="faap-details-summary" style="width:100%;min-height:140px;border:1px solid #ccc;padding:10px;border-radius:6px;background:#f9fbff;color:#111;">Click "View Details" on any submission to preview and download the application PDF.</div>
             </div>
         </div>
     </div>
     <script>
       document.addEventListener('DOMContentLoaded', function(){
-        const details = document.getElementById('faap-details-rows');
-        if (details && !details.value) {
-          details.value = 'Click "View Details" on any submission to preview data and get email/PDF links.';
+        const summary = document.getElementById('faap-details-summary');
+        if (summary) {
+          summary.textContent = 'Click "View Details" on any submission to preview and download the application PDF.';
         }
       });
     </script>
