@@ -87,16 +87,14 @@ function faap_get_form_config($data) {
     $type = sanitize_text_field($data['type'] ?? 'personal');
     $table_forms = $wpdb->prefix . 'faap_forms';
     $config = $wpdb->get_var($wpdb->prepare("SELECT config FROM $table_forms WHERE form_type = %s", $type));
-
     if (!$config) {
-        return rest_ensure_response(faap_get_default_form_steps());
+        return rest_ensure_response([]);
     }
 
     $decoded = json_decode($config, true);
     if (json_last_error() !== JSON_ERROR_NONE || !is_array($decoded)) {
-        return rest_ensure_response(faap_get_default_form_steps());
+        return rest_ensure_response([]);
     }
-
     return rest_ensure_response($decoded);
 }
 
@@ -126,53 +124,14 @@ function faap_format_label($key) {
 function faap_get_letterhead_logo_url() {
     $logo = get_option('faap_letterhead_logo_url');
     if (empty($logo)) {
-        // If not set, fall back to a logo shipped with the plugin.
-        $logo = plugins_url('Prominence Bank.png', __FILE__);
+        $frontend = rtrim(get_option('faap_frontend_url', ''), '/');
+        if (!empty($frontend)) {
+            $logo = $frontend . '/' . rawurlencode('Prominence Bank.png');
+        } else {
+            $logo = 'https://prominencebank.com/' . rawurlencode('Prominence Bank.png');
+        }
     }
     return esc_url($logo);
-}
-
-function faap_get_banking_policy_html() {
-    return '<div style="margin-top:26px;padding:14px;border:1px solid #e5e7eb;border-radius:10px;background:#f9fafb;">
-      <h3 style="margin:0 0 10px;font-size:14px;color:#0a192f;font-weight:800;">Banking Policy & Terms</h3>
-
-      <div style="font-size:12px;color:#374151;line-height:1.5;">
-        <p style="margin:0 0 8px;"><strong>Required Documentation & Accuracy</strong></p>
-        <ul style="margin:0 0 12px 18px;">
-          <li>All information must be true, accurate, complete, and legible.</li>
-          <li>Required documents must be submitted clearly and in the correct format.</li>
-          <li>Incomplete or missing documentation may result in application rejection.</li>
-        </ul>
-
-        <p style="margin:0 0 8px;"><strong>Account Type & Change Policy</strong></p>
-        <ul style="margin:0 0 12px 18px;">
-          <li>Account type selection is final and cannot be changed after opening.</li>
-          <li>The bank may request additional documentation or enhanced due diligence at any time.</li>
-        </ul>
-
-        <p style="margin:0 0 8px;"><strong>Payment & Fee Policy</strong></p>
-        <ul style="margin:0 0 12px 18px;">
-          <li>The account opening fee is a mandatory compliance processing fee and does not guarantee account approval.</li>
-          <li>Payments must follow the instructed methods; KTT/TELEX payments are strictly not accepted.</li>
-          <li>Minimum balance requirement: USD/EUR 5,000 must be maintained at all times.</li>
-          <li>If the application is declined, a full refund is issued within 10 business days to the original payment source.</li>
-          <li>If the account is approved, the fee is non-refundable.</li>
-        </ul>
-
-        <p style="margin:0 0 8px;"><strong>Payment Methods</strong></p>
-        <ul style="margin:0 0 12px 18px;">
-          <li>SWIFT international wire transfer (EURO / USD) – reference: Application ID + Onboarding & Compliance Processing Fee.</li>
-          <li>Cryptocurrency (USDT TRC20) – provide TXID, amount sent, sending wallet address, and timestamp/screenshot.</li>
-          <li>Crypto payments are non-custodial; PCM does not provide custody, brokerage, or wallet services.</li>
-        </ul>
-
-        <p style="margin:0 0 8px;"><strong>Compliance & Verification</strong></p>
-        <ul style="margin:0 0 0 18px;">
-          <li>The bank may verify supplied information and perform AML/KYC checks.</li>
-          <li>False or misleading information may result in application rejection or account closure.</li>
-        </ul>
-      </div>
-    </div>';
 }
 
 function faap_build_application_html($submission) {
@@ -215,7 +174,6 @@ function faap_build_application_html($submission) {
 
     $user_name = esc_html($data['fullName'] ?? $data['name'] ?? 'Applicant');
     $user_email = esc_html($data['email'] ?? '');
-    $logoUrl = faap_get_letterhead_logo_url();
 
     return '<div style="font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:#f3f4f6;padding:18px;">
       <div style="max-width:720px;margin:0 auto;background:#ffffff;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;">
@@ -253,8 +211,6 @@ function faap_build_application_html($submission) {
             <div style="font-weight:700;color:#111827;font-size:14px;margin-bottom:8px;">Uploaded Documents</div>
             <ul style="margin:0 0 0 18px;padding:0;color:#111827;">' . $attachmentItems . '</ul>
           </div>
-
-          ' . faap_get_banking_policy_html() . '
 
           <div style="font-size:12px;color:#6b7280;">If you need support, contact <a href="mailto:support@prominencebank.com" style="color:#2563eb;text-decoration:none;">support@prominencebank.com</a>.</div>
         </div>
@@ -318,15 +274,15 @@ function faap_build_application_pdf_html($submission) {
             <img src="' . esc_url($logoUrl) . '" alt="Prominence Bank" style="max-height:72px;object-fit:contain;" />
           </div>
         </div>
-        <div style="padding:14px 0;">
+        <div style="padding:10px 0;">
           <strong>Application ID:</strong> ' . esc_html($app_id) . '<br>
           <strong>Type:</strong> ' . esc_html($type_label) . '<br>
+          <strong>Submitted:</strong> ' . esc_html($submitted_at) . '<br>
         </div>
-        <div style="margin-top:10px;"><h3 style="margin-bottom:8px;">Client Details</h3>
+        <div style="margin-top:10px;"><h3 style="margin-bottom:8px;">Details</h3>
           <table class="details-table">' . $rows . '</table>
         </div>
         <div style="margin-top:16px;"><h3 style="margin-bottom:8px;">Uploaded Documents</h3>' . $images_html . '</div>
-        <div style="margin-top:18px;font-size:12px;color:#374151;">' . faap_get_banking_policy_html() . '</div>
       </div>
     </body></html>';
 }
@@ -423,25 +379,25 @@ function faap_handle_submission($request) {
         $user_email = sanitize_email($params['email'] ?? $params['signatoryEmail'] ?? '');
         $admin_email = sanitize_email(get_option('admin_email'));
         $type_label = ucwords(sanitize_text_field($params['type'] ?? 'personal'));
+        $logoUrl = faap_get_letterhead_logo_url();
 
         $full_body = faap_build_application_html($params);
         $headers = array('Content-Type: text/html; charset=UTF-8');
         $user_body = '<div style="font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:700px;margin:0 auto;padding:18px;background:#ffffff;">
-          <div style="display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:14px;border-bottom:1px solid #e5e7eb;gap:12px;">
+          <div style="display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:14px;border-bottom:1px solid #e5e7eb;gap:12px;flex-wrap:wrap;">
             <div style="font-size:12px;color:#374151;line-height:1.4;">
               <div><strong>From:</strong> Prominence Bank Corp. &lt;account@prominencebank.com&gt;</div>
               <div><strong>Subject:</strong> Application Submission Receipt</div>
               <div><strong>Date:</strong> ' . date('F j, Y \@ H:i') . '</div>
-              <div><strong>To:</strong> ' . esc_html($user_email ?: '') . '</div>
+              <div><strong>To:</strong> ' . esc_html($user_email ?: 'N/A') . '</div>
             </div>
-            <div style="width:92px;height:92px;display:flex;align-items:center;justify-content:center;">
-              <img src="' . $logoUrl . '" alt="Prominence Bank" style="max-width:100%;max-height:100%;object-fit:contain;" />
+            <div style="width:92px;display:flex;justify-content:flex-end;align-items:center;">
+              <img src="' . esc_url($logoUrl) . '" alt="Prominence Bank" style="max-height:72px;object-fit:contain;" />
             </div>
           </div>
-
           <div style="padding-top:18px;color:#111827;">
             <p style="margin:0 0 10px;">Dear Customer,</p>
-            <p style="margin:0 0 10px;color:#374151;">Your application has been received and is under review. A PDF summary of your submission is attached, along with any uploaded documents.</p>
+            <p style="margin:0 0 10px;color:#374151;">Your application has been received and is under review. Please find your application summary attached as PDF. Uploaded documents are also attached.</p>
             <p style="margin:0;color:#374151;">Thank you,<br>Prominence Bank Team</p>
           </div>
         </div>';
@@ -462,14 +418,7 @@ function faap_handle_submission($request) {
         $admin_subject = "NEW APPLICATION | " . $application_id . " | " . strtoupper($type_label);
         wp_mail($admin_email, $admin_subject, $full_body, $headers, $attachments);
 
-        $applicant_name = $params['fullName'] ?? $params['companyName'] ?? $params['signatoryName'] ?? $params['name'] ?? '';
-        return rest_ensure_response([
-            'success' => true,
-            'id' => $wpdb->insert_id,
-            'applicationId' => $application_id,
-            'applicantName' => $applicant_name,
-            'status' => $params['status'],
-        ]);
+        return rest_ensure_response(['success' => true, 'id' => $wpdb->insert_id, 'applicationId' => $application_id]);
     } catch (Exception $e) {
         return new WP_Error('submission_error', 'Application submission error: ' . $e->getMessage(), ['status' => 500]);
     }
