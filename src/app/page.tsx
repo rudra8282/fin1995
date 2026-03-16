@@ -20,7 +20,7 @@ function ApplicationLayout() {
   const [receipt, setReceipt] = useState<ReceiptData | null>(null);
 
   const formSteps = Array.isArray(steps) && steps.length > 0
-    ? steps.slice().sort((a, b) => Number(a.order || 0) - Number(b.order || 0)).map((step, index) => ({ id: index + 1, label: String(step.title || step.id || `Step ${index + 1}`) }))
+    ? [{ id: 1, label: "TYPE" }, ...steps.slice().sort((a, b) => Number(a.order || 0) - Number(b.order || 0)).map((step, index) => ({ id: index + 2, label: String(step.title || step.id || `Step ${index + 2}`) }))]
     : [
       { id: 1, label: "TYPE" },
       { id: 2, label: "IDENTITY" },
