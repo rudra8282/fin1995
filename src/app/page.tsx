@@ -144,7 +144,15 @@ function ApplicationLayout() {
   const canContinue = () => {
     if (currentStep === 1) return data.accountTypeId !== "";
     if (currentStep === 8) return data.mainDocumentFile !== undefined && data.paymentProofFile !== undefined;
-    if (currentStep === 9) return data.attestation?.agreedToTerms && data.attestation?.signatureName !== "";
+    if (currentStep === 9) {
+      return (
+        data.attestation?.agreedToTerms &&
+        data.attestation?.signatureName?.trim() !== "" &&
+        data.attestation?.idNumber?.trim() !== "" &&
+        data.attestation?.signatureDate?.trim() !== "" &&
+        data.attestation?.signatureImage?.trim() !== ""
+      );
+    }
     return true;
   };
 

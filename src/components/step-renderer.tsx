@@ -12,6 +12,71 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "@/
 import { useRef, useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 
+const STEP9_PCM_NOTICE = `This application may be supported by Prominence Client Management / Prominence Account Management (“PCM”), a separate legal entity acting as an independent introducer and providing administrative onboarding coordination only (intake support, document collection coordination, and application‑package transmission). PCM is not authorized to bind Prominence Bank or make representations regarding approval. PCM is not a bank and does not provide banking, deposit‑taking, securities brokerage, investment advisory, fiduciary, custody, wallet custody, or legal services. Prominence Bank alone determines whether to approve or decline an application and whether an account is opened. Any Account Opening Fee paid to PCM is a service fee for onboarding and compliance‑processing support; it is not a deposit with Prominence Bank and does not create or fund a bank account.
+
+SCOPE OF PCM SERVICES
+
+PCM services are limited to (i) assisting with completion of intake forms, (ii) coordinating collection of required documents, (iii) basic completeness checks (format/legibility), and (iv) transmitting the compiled application package to Prominence Bank. PCM does not provide advice, does not negotiate terms, does not handle client assets for investment or custody purposes, and does not represent that an application will be approved.`;
+
+const STEP9_ATTESTATION_TEXT = `AGREED AND ATTESTED
+
+By signing and submitting this Personal Bank Account Application, the Applicant(s) acknowledge(s), confirm(s), attest(s), represent(s), warrant(s), and irrevocably agree(s) to the following:
+
+A. Mandatory Submission Requirements (Strict Compliance)
+• The Applicant(s) understand(s), acknowledge(s), and accept(s) that the Bank shall automatically reject, without substantive review, processing, or response, any application submitted without all mandatory items required by the Bank, including, without limitation:
+  - Full Bank Account opening fee
+  - Valid proof of payment
+  - All required documentation, disclosures, and supporting materials specified in the application form
+• Repeated submission of incomplete, deficient, inaccurate, or non-compliant applications may result in permanent disqualification from reapplying for any banking product or service.
+
+B. Payment Instructions (Opening Fee)
+• Payments by KTT/TELEX are strictly prohibited.
+• Accepted methods: SWIFT international wire transfer; Cryptocurrency transfer to the designated wallet address.
+• Application ID must be included in payment reference.
+
+C. Account Opening Requirements
+• Minimum balance required, ongoing policy compliance, monitoring, internal controls and risk review.
+
+D. Finality of Account Type Selection
+• Account type selected is final. No conversion/reclassification after opening.
+• New application required for different account type.
+
+E. Transaction Profile and Ongoing Due Diligence
+• Account activity must align with declared profile.
+• Material deviations may require additional verification.
+
+F. Accuracy and Authorization
+• Applicant(s) affirm all information is true, accurate, complete, current, and not misleading.
+• Bank may verify details, perform compliance checks, and collect applicable costs.
+
+G. Account Retention, Record-Keeping, and Banking Relationship (ETMO Framework)
+• Account closure and retention are governed by Bank compliance/legal framework.
+• Accounts may be retained in administrative status for record retention and regulatory reasons.
+
+H. Compliance and Regulatory Framework
+• Applicant(s) agree(s) to comply with AML/KYC, sanctions, and risk requirements.
+• Bank operates under sovereign diplomatic framework and international compliance standards.
+
+I. Data Processing and Privacy
+• Applicant(s) consent(s) to data processing for application evaluation, onboarding, and compliance.
+
+J. Additional Standard Banking Provisions
+• Bank may restrict/suspend/terminate/refuse services under policies and regulatory requirements.
+
+1. Applicant(s) confirm(s) they have carefully read and understood this Application and are not relying upon any representation other than stated by the Bank.
+2. Applicant(s) authorize(s) the Bank to conduct all necessary due diligence and compliance checks.
+3. Applicant(s) agree(s) to provide additional documentation or clarifications if requested.
+4. Applicant(s) acknowledge(s) that the Bank may verify source of funds, wealth, activity, and may request documentation.
+5. Applicant(s) accept(s) that payment instructions, fees, and non-refundable terms apply as disclosed.
+6. Applicant(s) acknowledge(s) all declarations are made under penalty of perjury and applicable law.
+7. Applicant(s) agree(s) that Bank may share information with authorized regulators and service providers as required by law.
+8. Applicant(s) confirm(s) that any omissions, inaccuracies, or falsifications may lead to application rejection and/or account closure.
+9. Applicant(s) understand(s) the Bank’s rights to refuse transactions deemed suspicious or non-compliant.
+10. Applicant(s) waive(s) claims arising from misunderstanding if the Bank provides clear written instructions and disclosures.
+11. Applicant(s) acknowledge(s) these provisions shall survive account opening and termination.
+
+This attestation text is included to reflect the full legal requirements, bullet points and obligations intended for Step 9 in the application process.`;
+
 export function StepRenderer() {
   const { currentStep, data, steps, isLoading, updateData } = useForm();
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -208,55 +273,27 @@ export function StepRenderer() {
         </div>
 
         <div className="space-y-6">
-          <div className="bg-white border rounded-lg p-6 max-h-[400px] overflow-y-auto text-[11px] leading-relaxed text-slate-600 space-y-6 scrollbar-hide shadow-inner">
-            <p className="font-bold">By signing and submitting this Business Bank Account Application, the Applicant(s) acknowledge(s), confirm(s), attest(s), represent(s), warrant(s), and irrevocably agree(s) to the following:</p>
+          <Accordion type="single" collapsible>
+            <AccordionItem value="pcm-notice">
+              <AccordionTrigger className="text-base font-bold text-[#0a192f]">THIRD-PARTY ONBOARDING AND PAYMENT NOTICE <span className="text-xs font-normal text-slate-500">(Click to expand / view terms)</span></AccordionTrigger>
+              <AccordionContent className="text-[11px] text-slate-600 border border-slate-200 rounded-b-lg bg-slate-50 p-4">
+                <p className="mb-2 font-semibold">This application may be supported by Prominence Client Management / Prominence Account Management (“PCM”), a separate legal entity acting as an independent introducer and providing administrative onboarding coordination only (intake support, document collection coordination, and application-package transmission).</p>
+                <p className="mb-2">PCM is not authorized to bind Prominence Bank or make representations regarding approval. PCM is not a bank and does not provide banking, deposit-taking, securities brokerage, investment advisory, fiduciary, custody, wallet custody, or legal services. Prominence Bank alone determines whether to approve or decline an application and whether an account is opened. Any Account Opening Fee paid to PCM is a service fee for onboarding and compliance-processing support; it is not a deposit with Prominence Bank and does not create or fund a bank account.</p>
+                <p className="font-semibold">SCOPE OF PCM SERVICES</p>
+                <ul className="list-disc pl-5 text-[11px] space-y-1">
+                  <li>Assisting with completion of intake forms</li>
+                  <li>Coordinating collection of required documents</li>
+                  <li>Basic completeness checks (format/legibility)</li>
+                  <li>Transmitting the compiled application package to Prominence Bank</li>
+                </ul>
+                <p className="mt-2">PCM does not provide advice, does not negotiate terms, does not handle client assets for investment or custody purposes, and does not represent that an application will be approved.</p>
+              </AccordionContent>
+            </AccordionItem>
+          </Accordion>
 
-            <section className="space-y-2">
-              <h4 className="font-bold text-primary uppercase tracking-tight">A. Mandatory Submission Requirements (Strict Compliance)</h4>
-              <p className="font-normal">The Applicant(s) understand(s), acknowledge(s), and accept(s) that the Bank shall automatically reject, without substantive review, processing, or response, any application submitted without all mandatory items required by the Bank, including, without limitation:</p>
-              <ul className="pl-4 list-disc text-[11px] text-slate-600 space-y-1">
-                <li>Full Business Bank Account opening fee</li>
-                <li>Valid proof of payment</li>
-                <li>All required documentation, disclosures, and supporting materials specified in the application form</li>
-              </ul>
-              <p className="font-normal">The Applicant(s) further acknowledge(s) that repeated submission of incomplete, deficient, inaccurate, or non-compliant applications may, at the Bank's sole and absolute discretion, result in permanent disqualification from reapplying for any banking product or service.</p>
-            </section>
-
-            <section className="space-y-2">
-              <h4 className="font-bold text-primary uppercase tracking-tight">B. Payment Instructions (Opening Fee)</h4>
-              <p className="font-normal">The Applicant(s) acknowledge(s), understand(s), and accept(s) that payments made via KTT/TELEX are strictly prohibited and shall not be accepted under any circumstances for payment of the bank account opening fee.</p>
-              <p className="font-normal">Accepted methods of payment for the opening fee are strictly limited to the following:</p>
-              <ul className="pl-4 list-disc text-[11px] text-slate-600 space-y-1">
-                <li>SWIFT international wire transfer</li>
-                <li>Cryptocurrency transfer to the designated wallet address listed in the application form</li>
-              </ul>
-              <p className="font-normal">The Applicant(s) further acknowledge(s) that the Application ID must be included in the payment reference field exactly as instructed by the Bank in order to ensure proper and timely allocation of funds. Incomplete, inaccurate, omitted, misdirected, or improperly referenced payments may delay processing and may result in rejection of the application, without liability to the Bank.</p>
-            </section>
-
-            <section className="space-y-2">
-              <h4 className="font-bold text-primary uppercase tracking-tight">C. Account Opening Requirements</h4>
-              <p className="font-normal">The Applicant(s) acknowledge(s), understand(s), and accept(s) that: A minimum balance of USD/EUR 5,000 must be maintained in the account at all times; ongoing adherence to the Bank's account policies, procedures, operational requirements, and compliance standards is required; and if the account balance falls below the minimum required level, the Bank may restrict services, request corrective funding, apply internal controls, and/or place the account under review until the deficiency is remedied.</p>
-            </section>
-
-            <section className="space-y-2">
-              <h4 className="font-bold text-primary uppercase tracking-tight">D. Finality of Account Type Selection; No Conversion or Reclassification After Opening</h4>
-              <p className="font-normal">The Applicant(s) hereby acknowledge(s), confirm(s), represent(s), warrant(s), and irrevocably agree(s) that the account category selected in this Application is final and may not thereafter be amended, converted, substituted, re-designated, reclassified, exchanged, or otherwise modified into any other account type, whether in whole or in part. Any subsequent request for a different account type requires a new application and full onboarding review.</p>
-            </section>
-
-            <section className="space-y-2">
-              <h4 className="font-bold text-primary uppercase tracking-tight">E. Transaction Profile and Ongoing Due Diligence</h4>
-              <p className="font-normal">The Applicant(s) acknowledge(s) that account activity must align with the declared transaction profile and that material deviations may require additional verification, delay, restriction, or enhanced due diligence. The Applicant(s) agree(s) to provide additional documentation or clarifications when requested.</p>
-            </section>
-
-            <section className="space-y-2">
-              <h4 className="font-bold text-primary uppercase tracking-tight">F. Accuracy and Authorization</h4>
-              <p className="font-normal">The Applicant(s) affirm(s) that all information provided is true, accurate, complete, current, and not misleading, and authorize(s) the Bank to verify details, perform compliance checks, and collect applicable costs as permitted.</p>
-            </section>
-
-            <section className="space-y-2">
-              <h4 className="font-bold text-primary uppercase tracking-tight">G. Account Retention, Record-Keeping, and Banking Relationship (ETMO Framework)</h4>
-              <p className="font-normal">Account closure and retention are governed by the Bank's internal compliance and legal framework, including ETMO governance. Accounts may be retained in administrative status for record retention and regulatory reasons.</p>
-            </section>
+          <div className="bg-white border rounded-lg p-6 max-h-[400px] overflow-y-auto text-[11px] leading-relaxed text-slate-600 whitespace-pre-wrap shadow-inner">
+            {STEP9_ATTESTATION_TEXT}
+          </div>
 
             <section className="space-y-2">
               <h4 className="font-bold text-primary uppercase tracking-tight">H. Compliance and Regulatory Framework</h4>
