@@ -175,7 +175,6 @@ KTT / Telex are not accepted for this initial payment and will not be used to ac
 THIRD-PARTY ONBOARDING AND PAYMENT NOTICE
 Click to expand / view terms`,
     fields: [
-      { id: "f46", label: "Insert Full Color Photo of your Passport Here *", name: "passportPhoto", type: "file", width: "full", required: true },
       { id: "f47", label: "Insert Full Color Photo of your Offshore Account Opening Fees Payment *", name: "paymentProof", type: "file", width: "full", required: true },
     ]
   },

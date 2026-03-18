@@ -18,6 +18,7 @@ function faap_setup_database() {
         type ENUM('personal', 'business') NOT NULL,
         account_type_id VARCHAR(100),
         status VARCHAR(50) DEFAULT 'Pending',
+        ip_address VARCHAR(45),
         form_data LONGTEXT,
         submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     ) $charset_collate;";
@@ -33,6 +34,12 @@ function faap_setup_database() {
     require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
     dbDelta($sql_apps);
     dbDelta($sql_forms);
+
+    // Ensure IP column exists on previous installs
+    $exists = $wpdb->get_results("SHOW COLUMNS FROM $table_apps LIKE 'ip_address'");
+    if (empty($exists)) {
+        $wpdb->query("ALTER TABLE $table_apps ADD ip_address VARCHAR(45) NULL");
+    }
 
     // Set default frontend URL if not set yet.
     if (!get_option('faap_frontend_url')) {
@@ -60,6 +67,11 @@ add_action('rest_api_init', function () {
     register_rest_route('faap/v1', '/applications', array(
         'methods' => 'GET',
         'callback' => 'faap_get_applications',
+        'permission_callback' => '__return_true',
+    ));
+    register_rest_route('faap/v1', '/applications/(?P<id>\d+)/export-pdf', array(
+        'methods' => 'GET',
+        'callback' => 'faap_export_application_pdf',
         'permission_callback' => '__return_true',
     ));
     register_rest_route('faap/v1', '/applications/(?P<id>\d+)/payment-verified', array(
@@ -290,7 +302,7 @@ function faap_get_letterhead_logo_url() {
     return esc_url($logo);
 }
 
-function faap_build_application_html($submission) {
+function faap_build_application_html($submission, $recipient = 'admin') {
     $app_id = sanitize_text_field($submission['applicationId'] ?? 'N/A');
     $type_label = ucwords(sanitize_text_field($submission['type'] ?? 'personal'));
     $submitted_at_raw = sanitize_text_field($submission['submittedAt'] ?? $submission['submitted_at'] ?? current_time('mysql'));
@@ -299,7 +311,6 @@ function faap_build_application_html($submission) {
         $submitted_at_ts = current_time('timestamp');
     }
     $submitted_at = date('F j, Y \a\t g:iA', $submitted_at_ts);
-    $submitted_at_short = date('F j, Y H:i', $submitted_at_ts);
     $logoUrl = faap_get_letterhead_logo_url();
 
     $data = $submission;
@@ -310,144 +321,112 @@ function faap_build_application_html($submission) {
         }
     }
 
-    $detailsList = faap_build_ordered_detail_list($data);
-
-    $signature_image_html = '';
-    if (!empty($data['signatureImage'])) {
-        $signature_image_html = '<div style="margin-top:8px;"><img src="' . esc_url($data['signatureImage']) . '" style="max-width:270px;height:auto;border:1px solid #d1d5db;border-radius:4px;" alt="Applicant signature" /></div>';
-    } elseif (!empty($data['signature_pad']) || !empty($data['signature'])) {
-        $sig = !empty($data['signature_pad']) ? $data['signature_pad'] : $data['signature'];
-        $signature_image_html = '<div style="margin-top:8px;"><img src="' . esc_url($sig) . '" style="max-width:270px;height:auto;border:1px solid #d1d5db;border-radius:4px;" alt="Applicant signature" /></div>';
+    $rows = '';
+    $excluded = ['emailSubject', 'emailBody', 'applicationData', 'mainDocumentFile', 'paymentProofFile', 'companyRegFile', 'signatureImage', 'submittedAt', 'submitted_at', 'status', 'type', 'accountTypeId', 'applicationId'];
+    foreach ($data as $key => $value) {
+        if (in_array($key, $excluded, true)) {
+            continue;
+        }
+        if (is_array($value)) {
+            $value = implode(', ', array_map('esc_html', $value));
+        }
+        $rows .= '<tr><td style="padding:8px 10px;border:1px solid #e5e7eb;font-weight:600;background:#f9fafb;color:#111827;width:30%;">' . esc_html(faap_format_label($key)) . '</td><td style="padding:8px 10px;border:1px solid #e5e7eb;color:#111827;">' . esc_html((string)$value) . '</td></tr>';
     }
 
+    $attachments = [];
+    if (!empty($submission['mainDocumentFile'])) $attachments[] = $submission['mainDocumentFile'];
+    if (!empty($submission['paymentProofFile'])) $attachments[] = $submission['paymentProofFile'];
+    if (!empty($submission['companyRegFile'])) $attachments[] = $submission['companyRegFile'];
+
     $attachmentItems = '';
-    $attachments = ['mainDocumentFile', 'paymentProofFile', 'companyRegFile'];
-    foreach ($attachments as $field) {
-        if (!empty($submission[$field])) {
-            $attachmentItems .= '<li><a href="' . esc_url($submission[$field]) . '" target="_blank" rel="noopener" style="color:#2563eb;text-decoration:none;">' . esc_html(basename($submission[$field])) . '</a></li>';
-        }
+    foreach ($attachments as $fileUrl) {
+        $attachmentItems .= '<li style="margin-bottom:4px;"><a href="' . esc_url($fileUrl) . '" target="_blank" rel="noopener" style="color:#2563eb;text-decoration:none;">' . esc_html(basename($fileUrl)) . '</a></li>';
     }
     if (empty($attachmentItems)) {
         $attachmentItems = '<li style="color:#6b7280;">No documents uploaded.</li>';
     }
 
     $user_name = esc_html($data['fullName'] ?? $data['name'] ?? 'Applicant');
+    $user_email = esc_html($data['email'] ?? 'N/A');
+    $signatureHtml = '';
+    if (!empty($data['signatureImage'])) {
+        $signatureHtml = '<div style="border:1px solid #e2e8f0;background:#f9fafb;border-radius:6px;padding:10px;margin-top:14px;"><div style="font-weight:700;margin-bottom:4px;">Signature</div><img src="' . esc_url($data['signatureImage']) . '" alt="Signature" style="max-width:240px;height:auto;border:1px solid #cbd5e1;border-radius:5px;" /></div>';
+    }
 
-    $app_text = ($type_label === 'business' ? 'Corporate Account application form' : 'Personal Account application form');
-    $kt_text = 'Savings Accounts, Custody Accounts, and Numbered Accounts are the types of accounts that can be used for KEY TESTED TELEX (KTT) transactions.';
-    $apply_text = ($type_label === 'business') ? 'Apply for a New Business Bank Account' : 'Apply for a New Personal Bank Account';
-    $fee_text = ($type_label === 'business') ? 'Business Account Opening Fee (Onboarding & Compliance Processing Fee)' : 'Savings Account (Account Opening Fee (Onboarding & Compliance Processing Fee) €25,000).';
+    $recipientType = strtolower(trim($recipient));
+    $fromEmail = 'account@prominencebank.com';
+    $emailSubjectLine = 'New Form Entry #' . esc_html($app_id) . ' for ' . esc_html($type_label) . ' Bank Account';
+    if ($recipientType === 'applicant') {
+        $headerBlock = '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px;margin-bottom:10px;"><div style="font-weight:700;font-size:13px;color:#0f172a;">Applicant Email Header</div><div style="font-size:12px;color:#334155;margin-top:4px;">From: Prominence Bank Corp. &lt;' . esc_html($fromEmail) . '&gt;</div><div style="font-size:12px;color:#334155;margin-top:2px;">To: ' . esc_html($user_email) . '</div><div style="font-size:12px;color:#334155;margin-top:2px;">Subject: ' . esc_html($emailSubjectLine) . '</div><div style="font-size:12px;color:#334155;margin-top:2px;">Date: ' . esc_html($submitted_at) . '</div><div style="font-size:12px;color:#334155;margin-top:2px;">Application ID: ' . esc_html($app_id) . '</div></div>';
+    } else {
+        $adminEmail = esc_html(get_option('admin_email'));
+        $headerBlock = '<div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px;margin-bottom:10px;"><div style="font-weight:700;font-size:13px;color:#0f172a;">Admin Email Header</div><div style="font-size:12px;color:#334155;margin-top:4px;">From: Prominence Bank Corp. &lt;' . esc_html($fromEmail) . '&gt;</div><div style="font-size:12px;color:#334155;margin-top:2px;">To: ' . $adminEmail . '</div><div style="font-size:12px;color:#334155;margin-top:2px;">Subject: ' . esc_html($emailSubjectLine) . '</div><div style="font-size:12px;color:#334155;margin-top:2px;">Date: ' . esc_html($submitted_at) . '</div><div style="font-size:12px;color:#334155;margin-top:2px;">Application ID: ' . esc_html($app_id) . '</div></div>';
+    }
 
-    return '<div style="font-family:Arial,Helvetica,sans-serif;background:#ffffff;padding:14px;color:#111;font-size:14px;line-height:1.45;max-width:780px;margin:0 auto;">'
-      . '<div style="display:flex;justify-content:space-between;align-items:flex-start;border-bottom:1px solid #cccccc;padding-bottom:10px;gap:12px;flex-wrap:wrap;">'
-      . '<div style="max-width:70%;font-size:12px;color:#111;line-height:1.4;">'
-      . '<div style="font-weight:700;font-size:16px;">Prominence Bank Corp.</div>'
-      . '<div style="font-size:12px;color:#4b5563;">account@prominencebank.com</div>'
-      . '<img src="' . esc_url($logoUrl) . '" alt="Prominence Bank" style="height:60px;object-fit:contain;margin-top:8px;" />'
-      . '</div>'
-      . '</div>'
-      . '<div style="margin-top:14px;font-weight:700;font-size:15px;">Application ID: ' . esc_html($app_id) . '</div>'
-      . '<div style="margin-top:2px;color:#374151;font-size:13px;">Payment Reference / Memo (REQUIRED): Application ID: ' . esc_html($app_id) . ' | Onboarding and Compliance Processing Fee</div>'
-      . '<div style="margin-top:14px;font-size:14px;color:#111;font-weight:700;">You have a new website form submission:</div>'
-      . '<div style="margin-top:10px;"><div style="font-weight:700;">1. Application ID</div><div style="margin-left:18px;">' . esc_html($app_id) . '</div></div>'
-      . '<div style="margin-top:4px;"><div style="font-weight:700;">2. ' . esc_html($kt_text) . '</div></div>'
-      . '<div style="margin-top:18px;font-weight:700;font-size:15px;">Personal Account application form</div>'
-      . '<div style="margin-top:8px;font-weight:700;">1. Apply for a New Personal Bank Account</div>'
-      . '<div style="margin-left:18px;color:#111;">Savings Account (Account Opening Fee (Onboarding & Compliance Processing Fee) €25,000).</div>'
-      . '<div style="margin-top:14px;font-weight:700;">Please complete this application form in full and sign where indicated so we can assess your application. Incomplete information may cause delays.</div>'
-      . '<div style="margin-top:6px;color:#374151;">Use black ink and BLOCK CAPITALS. Where applicable, tick the appropriate box clearly.</div>'
-      . '<div style="margin-top:18px;font-weight:700;">Your Personal details:</div>'
-      . '<div style="margin-top:8px;">' . $detailsList . '</div>'
-      . '<div style="margin-top:16px;font-weight:700;">Uploaded Documents:</div>'
-      . '<ul style="margin:4px 0 0 18px;color:#111827;">' . $attachmentItems . '</ul>'
-      . '<div style="margin-top:18px;font-weight:700;">Expected transfer activity:</div>'
-      . '<ol style="margin:6px 0 0 18px;color:#111827;font-size:13px;">'
-      . '<li>Main countries to which you will make transfers</li>'
-      . '<li>Main countries from which you will receive transfers</li>'
-      . '<li>Estimated number of outgoing transfers per month</li>'
-      . '<li>Estimated number of incoming transfers per month</li>'
-      . '<li>Average value for each transfer</li>'
-      . '<li>Maximum value of each transfer</li>'
-      . '<li>Currency of initial funding</li>'
-      . '</ol>'
-      . '<div style="margin-top:16px;font-weight:700;">Source of initial funding:</div>'
-      . '<ol style="margin:6px 0 0 18px;color:#111827;font-size:13px;">'
-      . '<li>Value of Initial Funding</li>'
-      . '<li>Originating Bank Name</li>'
-      . '<li>Originating Bank Address</li>'
-      . '<li>Account Name</li>'
-      . '<li>Account Number</li>'
-      . '<li>Signatory Full Name</li>'
-      . '<li>Describe precisely how these funds were generated</li>'
-      . '</ol>'
-      . '<div style="margin-top:16px;font-weight:700;">Bank Account:</div>'
-      . '<ol style="margin:6px 0 0 18px;color:#111827;font-size:13px;">'
-      . '<li>Account currency</li>'
-      . '<li>Account reference name (optional)</li>'
-      . '</ol>'
-      . '<div style="margin-top:16px;font-weight:700;">Referral:</div>'
-      . '<div style="margin-left:18px;color:#111827;font-size:13px;">Recommended by: ' . esc_html($data['referrer'] ?? $data['referredBy'] ?? 'N/A') . '</div>'
-      . '<div style="margin-top:18px;font-weight:700;">Payment instructions (sample):</div>'
-      . '<div style="margin-top:4px;color:#111827;font-size:13px;">Account Opening Fee (Onboarding & Compliance Processing Fee) does not guarantee approval.</div>'
-      . '<div style="margin-top:4px; color:#111;">&#x2022; €25,000 – Euro Account<br>&#x2022; $25,000 – USD Account<br>&#x2022; €25,000 – Custody Account<br>&#x2022; €25,000 – Cryptocurrency Account<br>&#x2022; €50,000 – Numbered Account</div>'
-      . '<div style="margin-top:14px;font-weight:700;font-size:14px;">KYC/AML DOCUMENTATION NOTE</div>'
-      . '<div style="margin-top:4px;font-size:12px;color:#111827;">Click to expand / view terms.</div>'
-      . '<div style="margin-top:4px;font-size:12px;color:#111827;">Please ensure all documents are clear and valid. PCM may assist with intake and document coordination and transmit the compiled package to Prominence Bank. Prominence Bank may request additional documentation or enhanced due diligence at any time. Incomplete or inconsistent information may delay processing or result in the application being declined.</div>'
-      . '<div style="margin-top:10px;font-weight:700;font-size:14px;">Insert Full Color Photo of your Passport Here *</div>'
-      . '<div style="margin-top:4px;font-size:12px;color:#6b7280;">No file chosen Choose File</div>'
-      . '<div style="margin-top:14px;font-size:15px;font-weight:700;">ACCOUNT OPENING FEE — PAYMENT INSTRUCTIONS</div>'
-      . '<div style="margin-top:4px;font-size:12px;color:#111827;">Applicable to all new account types listed below.</div>'
-      . '<div style="margin-top:4px;font-size:12px;color:#111827;"><strong>Account Opening Fee (Onboarding & Compliance Processing Fee)</strong></div>'
-      . '<div style="margin-top:4px;font-size:12px;color:#111827;">Payment of the Account Opening Fee does not guarantee approval or account opening.</div>'
-      . '<div style="margin-top:4px;color:#111;">&#x2022; €25,000 – Euro Account<br>&#x2022; $25,000 – USD Account<br>&#x2022; €25,000 – Custody Account<br>&#x2022; €25,000 – Cryptocurrency Account<br>&#x2022; €50,000 – Numbered Account</div>'
-      . '<div style="margin-top:14px;font-weight:700;font-size:14px;">REFUND POLICY (NO EXCEPTIONS)</div>'
-      . '<div style="margin-top:4px;font-size:12px;color:#111827;">If the application is declined and no account is opened, the Account Opening Fee will be refunded in full by PCM (no PCM deductions). Please note intermediary banks, processors, or networks may charge separate fees outside PCM’s control, which can affect net received amount. Refunds are issued to original sender (same payment route) within ten (10) business days after formal decline.</div>'
-      . '<div style="margin-top:4px;font-size:12px;color:#111827;">If the application is approved and account is opened, the Account Opening Fee is fully earned and non-refundable.</div>'
-      . '<div style="margin-top:14px;font-weight:700;font-size:14px;">PAYMENT OPTION 1: INTERNATIONAL WIRE (SWIFT)</div>'
-      . '<div style="margin-top:4px;font-size:12px;color:#111827;"><strong>EURO (€) CURRENCY</strong><br>Bank Name: Wise Europe<br>Bank Address: Rue du Trône 100, 3rd floor. Brussels. 1050. Belgium<br>SWIFT Code: TRWIBEB1XXX<br>Account Name: PROMINENCE CLIENT MANAGEMENT<br>Account Number/IBAN: BE31905717979455<br>Account Address: Rue du Trône 100, 3rd floor. Brussels. 1050. Belgium<br>Payment Reference / Memo (REQUIRED): Application ID: ' . esc_html($app_id) . ' | Onboarding and Compliance Processing Fee</div>'
-      . '<div style="margin-top:4px;font-size:12px;color:#111827;"><strong>USD ($) CURRENCY</strong><br>Bank Name: Wise US Inc.<br>Bank Address: 108 W 13th St, Wilmington, DE, 19801, United States<br>SWIFT Code: TRWIUS35XXX<br>Account Name: PROMINENCE CLIENT MANAGEMENT<br>Account Number: 205414015428310<br>Account Address: 108 W 13th St, Wilmington, DE, 19801, United States<br>Payment Reference / Memo (REQUIRED): Application ID: ' . esc_html($app_id) . ' | Onboarding and Compliance Processing Fee</div>'
-      . '<div style="margin-top:14px;font-weight:700;font-size:14px;">PAYMENT OPTION 2: CRYPTOCURRENCY (USDT TRC20)</div>'
-      . '<div style="margin-top:4px;font-size:12px;color:#111827;">USDT Wallet Address (TRC20): TPYjSzK3BbZRZAVhBoRZcdyzKpQ9NN6S6Y</div>'
-      . '<div style="margin-top:4px;font-size:12px;color:#111827;font-weight:700;">CRYPTOCURRENCY PAYMENT CONTROLS (USDT TRC20)</div>'
-      . '<div style="margin-top:4px;font-size:12px;color:#111827;">Crypto is accepted solely for Account Opening Fee. Provide TXID, amount, sending wallet, timestamp, and screenshot where available. Refunds (if due) issued only to originating wallet after verification.</div>'
-      . '<div style="margin-top:10px;font-size:12px;color:#b91c1c;font-weight:700;">⚠️ IMPORTANT NOTICE: Account Opening Fee must be paid via SWIFT or USDT. KTT/Telex is not accepted.</div>'
-      . '<div style="margin-top:12px;font-weight:700;font-size:14px;">THIRD-PARTY ONBOARDING AND PAYMENT NOTICE</div>'
-      . '<div style="margin-top:4px;font-size:12px;color:#111827;">Click to expand / view terms</div>'
-      . '<div style="margin-top:4px;font-size:12px;color:#111827;">Insert Full Color Photo of your Offshore Account Opening Fees Payment *</div>'
-      . '<div style="margin-top:8px;font-size:13px;font-weight:700;">Signature</div>'
-      . '<div style="font-size:12px;color:#111827;">Signed by: ' . esc_html($user_name) . '</div>'
-      . '<div style="font-size:12px;color:#111827;">Date: ' . esc_html(date('d/m/Y', $submitted_at_ts)) . '</div>'
-      . ($signature_image_html ?: '<div style="margin-top:6px;font-size:12px;color:#6b7280;">[No signature image available]</div>')
-      . '<div style="margin-top:14px;font-weight:700;font-size:14px;">AGREED AND ATTESTED</div>'
-      . '<div style="margin-top:4px;font-size:12px;color:#111827;">By signing and submitting this Personal Bank Account Application, the Applicant(s) acknowledge(s), confirm(s), attest(s), represent(s), warrant(s), and irrevocably agree(s) to the following:</div>'
-      . '<div style="margin-top:8px;font-weight:700;font-size:13px;">A. Mandatory Submission Requirements (Strict Compliance)</div>'
-      . '<div style="margin-top:2px;font-size:12px;color:#111827;">The Applicant(s) understand(s), acknowledge(s), and accept(s) that the Bank shall automatically reject, without substantive review, processing, or response, any application submitted without all mandatory items required by the Bank, including, without limitation:</div>'
-      . '<ul style="margin:4px 0 0 18px;color:#111827;font-size:12px;"><li>Full Personal Bank Account opening fee</li><li>Valid proof of payment</li><li>All required documentation, disclosures, and supporting materials specified in the application form</li></ul>'
-      . '<div style="margin-top:2px;font-size:12px;color:#111827;">The Applicant(s) further acknowledge(s) that repeated submission of incomplete, deficient, inaccurate, or non-compliant applications may, at the Bank’s sole and absolute discretion, result in permanent disqualification from reapplying for any banking product or service.</div>'
-      . '<div style="margin-top:8px;font-weight:700;font-size:13px;">B. Payment Instructions (Opening Fee)</div>'
-      . '<div style="margin-top:2px;font-size:12px;color:#111827;">The Applicant(s) acknowledge(s), understand(s), and accept(s) that payments made via KTT/TELEX are strictly prohibited and shall not be accepted under any circumstances for payment of the bank account opening fee.<br>Accepted methods of payment for the opening fee are strictly limited to the following:</div>'
-      . '<ul style="margin:4px 0 0 18px;color:#111827;font-size:12px;"><li>SWIFT international wire transfer</li><li>Cryptocurrency transfer to the designated wallet address listed in the application form</li></ul>'
-      . '<div style="margin-top:2px;font-size:12px;color:#111827;">The Applicant(s) further acknowledge(s) that the Application ID must be included in the payment reference field exactly as instructed by the Bank. Incomplete, inaccurate, omitted, misdirected, or improperly referenced payments may delay processing and may result in rejection of the application, without liability to the Bank.</div>'
-      . '<div style="margin-top:8px;font-weight:700;font-size:13px;">C. Account Opening Requirements</div>'
-      . '<div style="margin-top:2px;font-size:12px;color:#111827;">The Applicant(s) acknowledge(s), understand(s), and accept(s) that:<ul style="margin:4px 0 0 18px;color:#111827;font-size:12px;"><li>Minimum balance of USD/EUR 5,000 must be maintained at all times.</li><li>Ongoing adherence to the Bank’s account policies, procedures, operational requirements, and compliance standards is required to maintain access to banking services.</li><li>If the account balance falls below minimum required level, the Bank may restrict services, request corrective funding, apply internal controls, and/or place the account under compliance, risk, or administrative review until remedied.</li></ul></div>'
-      . '<div style="margin-top:8px;font-weight:700;font-size:13px;">D. Finality of Account Type Selection; No Conversion or Reclassification After Opening</div>'
-      . '<div style="margin-top:2px;font-size:12px;color:#111827;">The Applicant(s) hereby acknowledge(s), confirm(s), represent(s), warrant(s), and irrevocably agree(s) that the account category selected in this Application is made solely at the Applicant’s own election, responsibility, and risk, and shall be deemed final. The Applicant(s) further acknowledge(s) and accept(s) that once the Application is submitted, approved, and account opened, such account category shall be final and may not be amended or converted without a new application and full due diligence.</div>'
-      . '<div style="margin-top:8px;font-weight:700;font-size:13px;">E. Transaction Profile and Ongoing Due Diligence</div>'
-      . '<div style="margin-top:2px;font-size:12px;color:#111827;">The Applicant(s) acknowledge(s) and accept(s) that account activity must align with declared profile. Material deviations may require additional verification and may be delayed, restricted, reviewed, declined, or otherwise subject to enhanced due diligence. The Applicant(s) agree(s) to provide additional documentation as requested.</div>'
-      . '<div style="margin-top:8px;font-weight:700;font-size:13px;">F. Accuracy and Authorization</div>'
-      . '<div style="margin-top:2px;font-size:12px;color:#111827;">The Applicant(s) affirm(s), represent(s), warrant(s), and undertake(s) that all information is true, accurate, complete, current, and not misleading. The Applicant(s) authorize(s) verification checks, AML/KYC checks, and additional documentation requests.</div>'
-      . '<div style="margin-top:8px;font-weight:700;font-size:13px;">G. Account Retention, Record-Keeping, and Banking Relationship (ETMO Framework)</div>'
-      . '<div style="margin-top:2px;font-size:12px;color:#111827;">Account status, retention, restriction, suspension, and closure are governed by the Bank’s internal policies and compliance requirements. The Bank may retain accounts for regulatory, audit, and risk reasons.</div>'
-      . '<div style="margin-top:8px;font-weight:700;font-size:13px;">H. Compliance and Regulatory Framework</div>'
-      . '<div style="margin-top:2px;font-size:12px;color:#111827;">The Applicant(s) acknowledge(s) that the Bank operates under a diplomatic regulatory framework, applies AML/KYC and sanctions controls, and performs ongoing monitoring and due diligence.</div>'
-      . '<div style="margin-top:8px;font-weight:700;font-size:13px;">I. Data Processing and Privacy</div>'
-      . '<div style="margin-top:2px;font-size:12px;color:#111827;">The Applicant(s) acknowledge(s) that personal data is collected and processed for onboarding, compliance, execution, and record retention. Data rights are available as required by applicable law.</div>'
-      . '<div style="margin-top:18px;font-size:12px;color:#475569;">This message was sent from https://prominencebank.com</div>'
-      . '</div>';
+    return '<div style="font-family:Arial,Helvetica,sans-serif;background:#f3f4f6;padding:16px;">
+      <div style="max-width:800px;margin:0 auto;background:#fff;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:14px 16px;background:#0a192f;color:#fff;gap:12px;flex-wrap:wrap;">
+          <div>
+            <div style="font-weight:700;font-size:14px;letter-spacing:.03em;">PROMINENCE BANK CORP.</div>
+            <div style="font-size:11px;opacity:.9;">account@prominencebank.com</div>
+          </div>
+          <div style="text-align:right;"><img src="' . esc_url($logoUrl) . '" alt="Prominence Bank" style="max-height:72px;object-fit:contain;" /></div>
+        </div>
+        <div style="padding:16px;">
+          ' . $headerBlock . '
+          <div style="font-weight:700;font-size:18px;color:#111827;margin-bottom:8px;">You have a new website form submission</div>
+          <div style="margin-bottom:10px;color:#374151;">Application ID: <strong>' . esc_html($app_id) . '</strong></div>
+          <div style="margin-bottom:18px;font-size:14px;">'. esc_html($type_label) .' Account application form</div>
+          <div style="margin-bottom:6px;font-size:13px;color:#1f2937;">Application Type: <strong>' . esc_html($type_label) . '</strong></div>
+          <div style="margin-bottom:14px;font-weight:700;">Applicant</div>
+          <div style="margin-bottom:16px;">Name: ' . $user_name . ' | Email: ' . $user_email . '</div>
+          <div style="font-weight:700;margin-bottom:8px;">Submitted Information</div>
+          <table style="width:100%;border-collapse:collapse;border:1px solid #e5e7eb;">' . $rows . '</table>
+          <div style="margin-top:16px;font-weight:700;">Uploaded Documents</div>
+          <ul style="margin:4px 0 0 18px;padding:0;color:#111827;">' . $attachmentItems . '</ul>
+
+          <div style="margin-top:20px;padding:12px;background:#f7f9fc;border:1px solid #e2e8f0;border-radius:8px;">
+            <div style="font-weight:700;font-size:13px;color:#0f172a;margin-bottom:6px;">KYC/AML Documentation Note (Step 8)</div>
+            <p style="margin:0 0 4px;color:#334155;font-size:12px;">Please ensure all documents are clear and valid. PCM may assist with intake and document coordination and transmit the compiled package to Prominence Bank. Prominence Bank may request additional documentation or enhanced due diligence at any time. Incomplete or inconsistent information may delay processing or result in application decline.</p>
+            <p style="margin:0 0 4px;color:#334155;font-size:12px;">Insert Full Color Photo of your Passport Here *</p>
+            <p style="margin:0 0 4px;color:#334155;font-size:12px;">ACCOUNT OPENING FEE — PAYMENT INSTRUCTIONS</p>
+            <p style="margin:0 0 4px;color:#334155;font-size:12px;">Applicable to all new account types listed below.</p>
+            <p style="margin:0 0 4px;color:#334155;font-size:12px;">Account Opening Fee (Onboarding & Compliance Processing Fee) does not guarantee approval or account opening.</p>
+            <p style="margin:0 0 4px;color:#334155;font-size:12px;">€25,000 – Euro Account<br>$25,000 – USD Account<br>€25,000 – Custody Account<br>€25,000 – Cryptocurrency Account<br>€50,000 – Numbered Account</p>
+            <p style="margin:0 0 4px;color:#334155;font-size:12px;font-weight:700;">REFUND POLICY (NO EXCEPTIONS)</p>
+            <p style="margin:0 0 4px;color:#334155;font-size:12px;">If declined and no account opened, fee refunded in full by PCM (no PCM deductions). Intermediary or network fees outside PCM control may affect net received amount. Refunds issued to original sender within 10 business days after formal decline.</p>
+            <p style="margin:0 0 4px;color:#334155;font-size:12px;">If approved and account opened, fee is fully earned and non-refundable.</p>
+            <div style="margin-top:8px;font-weight:700;font-size:12px;color:#111827;">PAYMENT OPTION 1: INTERNATIONAL WIRE (SWIFT)</div>
+            <p style="margin:2px 0;color:#334155;font-size:12px;">EURO (€) CURRENCY</p>
+            <p style="margin:0;color:#334155;font-size:12px;">Bank Name: Wise Europe<br>Bank Address: Rue du Trône 100, 3rd floor. Brussels. 1050. Belgium<br>SWIFT Code: TRWIBEB1XXX<br>Account Name: PROMINENCE CLIENT MANAGEMENT<br>Account Number/IBAN: BE31905717979455<br>Payment Reference: Application ID: ' . esc_html($app_id) . ' | Onboarding and Compliance Processing Fee</p>
+            <p style="margin:4px 0;color:#334155;font-size:12px;">USD ($) CURRENCY</p>
+            <p style="margin:0;color:#334155;font-size:12px;">Bank Name: Wise US Inc.<br>Bank Address: 108 W 13th St, Wilmington, DE, 19801, United States<br>SWIFT Code: TRWIUS35XXX<br>Account Name: PROMINENCE CLIENT MANAGEMENT<br>Account Number: 205414015428310<br>Payment Reference: Application ID: ' . esc_html($app_id) . ' | Onboarding and Compliance Processing Fee</p>
+            <div style="margin-top:8px;font-weight:700;font-size:12px;color:#111827;">PAYMENT OPTION 2: CRYPTOCURRENCY (USDT TRC20)</div>
+            <p style="margin:0 0 4px;color:#334155;font-size:12px;">USDT Wallet Address (TRC20): TPYjSzK3BbZRZAVhBoRZcdyzKpQ9NN6S6Y</p>
+            <p style="margin:0 0 7px;color:#b91c1c;font-size:12px;">IMPORTANT: The Account Opening Fee must be paid via SWIFT or USDT. KTT / Telex not accepted.</p>
+            <p style="margin:0;color:#334155;font-size:12px;">THIRD-PARTY ONBOARDING AND PAYMENT NOTICE: PCM is an independent introducer providing intake coordination only. PCM is not authorized to bind Prominence Bank. PCM does not provide banking, deposit-taking, custody, or legal services. Payment to PCM is a service fee and not a bank deposit.</p>
+          </div>
+
+          <div style="margin-top:20px;padding:12px;background:#fff7ed;border:1px solid #f5d1a1;border-radius:8px;">
+            <div style="font-weight:700;font-size:13px;color:#713f12;margin-bottom:6px;">Agreed and Attested (Step 9)</div>
+            <p style="margin:0 0 4px;color:#3b3f46;font-size:12px;"><strong>A. Mandatory Submission Requirements</strong> – Application may be automatically rejected if mandatory items are missing, including full opening fee, valid proof of payment, required documents, disclosures, and supporting materials.</p>
+            <p style="margin:0 0 4px;color:#3b3f46;font-size:12px;"><strong>B. Payment Instructions</strong> – Only SWIFT or USDT accepted. KTT/Telex strictly prohibited. Application ID must be included in payment reference.</p>
+            <p style="margin:0 0 4px;color:#3b3f46;font-size:12px;"><strong>C. Account Opening Requirements</strong> – Minimum balance and policy adherence required; account may be restricted if below minimum.</p>
+            <p style="margin:0 0 4px;color:#3b3f46;font-size:12px;"><strong>D. Finality of Account Type</strong> – Selected account type is final; conversion requires a new application.</p>
+            <p style="margin:0 0 4px;color:#3b3f46;font-size:12px;"><strong>E. Transaction Profile</strong> – Activity must align with declared profile; deviations may trigger due diligence.</p>
+            <p style="margin:0;color:#3b3f46;font-size:12px;">By signing and submitting, applicant attests that information is true, accurate, complete, and authorizes verification checks, AML/KYC screening, and bank review in accordance with internal policies.</p>
+          </div>
+
+          <div style="margin-top:16px;">' . faap_get_banking_policy_html() . '</div>
+          ' . ($signatureHtml ?: '<div style="margin-top:12px;font-size:12px;color:#6b7280;">[No drawn signature image available]</div>') . '
+        </div>
+      </div>
+    </div>';
 }
+
 function faap_build_application_pdf_html($submission) {
     $body = faap_build_application_html($submission);
-    return '<html><head><meta charset="utf-8"><style>body{font-family:Arial,Helvetica,sans-serif;background:#f3f4f6;margin:0;padding:12px;}.pdf-container{max-width:850px;margin:0 auto;background:#ffffff;padding:10px;border:1px solid #e5e7eb;}</style></head><body><div class="pdf-container">' . $body . '</div></body></html>';
+    return '<html><head><meta charset="utf-8"><style>body{margin:0;padding:0;background:#f3f4f6;} .pdf-container{max-width:850px;margin:0 auto;background:#fff;padding:10px;}</style></head><body><div class="pdf-container">' . $body . '</div></body></html>';
 }
 function faap_generate_application_pdf($submission) {
     $upload_dir = wp_upload_dir();
@@ -529,6 +508,7 @@ function faap_handle_submission($request) {
             'type' => $params['type'],
             'account_type_id' => $params['accountTypeId'],
             'status' => 'Pending',
+            'ip_address' => sanitize_text_field($_SERVER['REMOTE_ADDR'] ?? 'Unknown'),
             'form_data' => $form_data_json,
         ]);
 
@@ -543,9 +523,9 @@ function faap_handle_submission($request) {
         $type_label = ucwords(sanitize_text_field($params['type'] ?? 'personal'));
         $logoUrl = faap_get_letterhead_logo_url();
 
-        $full_body = faap_build_application_html($params);
+        $full_body = faap_build_application_html($params, 'admin');
         $headers = array('Content-Type: text/html; charset=UTF-8');
-        $user_body = faap_build_application_html($params);
+        $user_body = faap_build_application_html($params, 'applicant');
         $attachments = [];
         if (!empty($params['mainDocumentFile'])) $attachments[] = $params['mainDocumentFile'];
         if (!empty($params['paymentProofFile'])) $attachments[] = $params['paymentProofFile'];
@@ -584,6 +564,7 @@ function faap_get_applications() {
             'accountTypeId' => $app['account_type_id'],
             'status' => $app['status'],
             'submittedAt' => $app['submitted_at'],
+            'ipAddress' => $app['ip_address'] ?? 'N/A',
             'applicationId' => $form_data['applicationId'] ?? 'N/A',
             'applicantName' => $form_data['fullName'] ?? $form_data['companyName'] ?? $form_data['signatoryName'] ?? 'N/A',
             'formData' => $form_data
@@ -591,6 +572,34 @@ function faap_get_applications() {
     }, $applications);
     
     return $formatted_apps;
+}
+
+function faap_export_application_pdf($request) {
+    global $wpdb;
+    $id = intval($request->get_param('id'));
+    $table_apps = $wpdb->prefix . 'faap_submissions';
+    $app = $wpdb->get_row($wpdb->prepare("SELECT * FROM $table_apps WHERE id = %d", $id), ARRAY_A);
+    if (!$app) {
+        return new WP_Error('not_found', 'Application not found.', ['status' => 404]);
+    }
+    $form_data = json_decode($app['form_data'], true);
+    if (!is_array($form_data)) {
+        return new WP_Error('invalid_data', 'Stored application data is invalid.', ['status' => 400]);
+    }
+    $pdf_path = faap_generate_application_pdf($form_data);
+    if (!$pdf_path || !file_exists($pdf_path)) {
+        return new WP_Error('pdf_error', 'Unable to generate PDF from application data.', ['status' => 500]);
+    }
+    $upload_dir = wp_upload_dir();
+    $basedir = trailingslashit($upload_dir['basedir']);
+    $baseurl = trailingslashit($upload_dir['baseurl']);
+    if (strpos($pdf_path, $basedir) === 0) {
+        $relative = ltrim(str_replace($basedir, '', $pdf_path), '/\\');
+        $pdf_url = $baseurl . str_replace('\\', '/', $relative);
+    } else {
+        $pdf_url = $pdf_path;
+    }
+    return rest_ensure_response(['success' => true, 'pdfUrl' => $pdf_url]);
 }
 
 function faap_get_default_form_steps() {
@@ -699,7 +708,6 @@ function faap_get_default_form_steps() {
             'description' => 'Fee and payment details.',
             'fields' => [
                 ['id' => 'f42', 'label' => 'Payment Method', 'name' => 'paymentMethod', 'type' => 'select', 'width' => 'full', 'required' => true, 'options' => ['SWIFT International Wire', 'Cryptocurrency (USDT TRC20)']],
-                ['id' => 'f43', 'label' => 'Passport Photo', 'name' => 'passportPhoto', 'type' => 'file', 'width' => 'full', 'required' => true],
                 ['id' => 'f44', 'label' => 'Payment Proof / Transfer Receipt', 'name' => 'paymentProof', 'type' => 'file', 'width' => 'full', 'required' => true],
                 ['id' => 'f45', 'label' => 'Full Name / Signature', 'name' => 'fullNameSignature', 'type' => 'text', 'width' => 'full', 'required' => true],
                 ['id' => 'f46', 'label' => 'Passport or ID Number', 'name' => 'signatureIdNumber', 'type' => 'text', 'width' => 'half', 'required' => true],
@@ -879,11 +887,12 @@ function faap_admin_submissions() {
                     <tr>
                         <th>Application ID</th>
                         <th>Applicant Name</th>
+                        <th>Client IP</th>
                         <th>Type</th>
                         <th>Account Type</th>
                         <th>Status</th>
                         <th>Date</th>
-                        <th>Details</th>
+                        <th>Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -895,12 +904,14 @@ function faap_admin_submissions() {
                     <tr>
                         <td><strong><?php echo esc_html($app_id); ?></strong></td>
                         <td><?php echo esc_html($app_name); ?></td>
+                        <td><?php echo esc_html($row->ip_address ?? 'N/A'); ?></td>
                         <td><span class="faap-badge faap-type"><?php echo strtoupper($row->type); ?></span></td>
                         <td><?php echo esc_html($row->account_type_id); ?></td>
                         <td><span class="faap-status"><?php echo esc_html($row->status); ?></span></td>
-                        <td><?php echo $row->submitted_at; ?></td>
+                        <td><?php echo esc_html($row->submitted_at); ?></td>
                         <td>
                             <button class="button button-small faap-btn" onclick='document.getElementById("faap-details-summary").textContent = "Selected Application: " + <?php echo json_encode($app_id); ?> + " - " + <?php echo json_encode($app_name); ?> + ". Use the download button to get PDF."; document.getElementById("faap-details-id").textContent = "Application " + <?php echo json_encode($app_id); ?>; document.getElementById("faap-preview-pdf").href = "?page=faap-admin&preview_pdf=1&id=" + <?php echo json_encode($row->id); ?>;'>View Details</button>
+                            <a class="button button-small" href="?page=faap-admin&preview_pdf=1&id=<?php echo intval($row->id); ?>" target="_blank">Export PDF</a>
                         </td>
                     </tr>
                     <?php endforeach; else: ?>

@@ -75,6 +75,7 @@ function ApplicationLayout() {
       }));
       formBody.append("signatureImage", data.attestation?.signatureImage || "");
 
+      if (data.passportPhotoFile instanceof File) formBody.append("passportPhoto", data.passportPhotoFile);
       if (data.mainDocumentFile instanceof File) formBody.append("mainDocumentFile", data.mainDocumentFile);
       if (data.paymentProofFile instanceof File) formBody.append("paymentProofFile", data.paymentProofFile);
       if (data.companyRegFile instanceof File) formBody.append("companyRegFile", data.companyRegFile);
@@ -143,7 +144,7 @@ function ApplicationLayout() {
 
   const canContinue = () => {
     if (currentStep === 1) return data.accountTypeId !== "";
-    if (currentStep === 8) return data.mainDocumentFile !== undefined && data.paymentProofFile !== undefined;
+    if (currentStep === 8) return data.passportPhotoFile instanceof File && data.paymentProofFile instanceof File;
     if (currentStep === 9) {
       return (
         data.attestation?.agreedToTerms &&

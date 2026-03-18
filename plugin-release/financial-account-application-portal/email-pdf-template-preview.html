@@ -1,0 +1,111 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Template Preview</title>
+  <style>
+    body { margin: 0; background: #f3f4f6; font-family: Arial, Helvetica, sans-serif; }
+    .wrapper { max-width: 800px; margin: 20px auto; background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; }
+    .header { display: flex; justify-content: space-between; align-items: flex-start; padding: 14px 16px; background: #0a192f; color: #fff; gap:12px; flex-wrap: wrap; }
+    .header-left { line-height: 1.2; }
+    .header-left .brand { font-weight:700; font-size:14px; letter-spacing:.03em; }
+    .header-left .contact { font-size:11px; opacity:.9; }
+    .header-right img { max-height:72px; object-fit:contain; }
+    .content { padding:16px; color: #111827; }
+    .info-grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:12px; }
+    .panel { background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:10px; }
+    .panel h4 { margin:0 0 4px; font-size:13px; color:#0f172a; font-weight:700; }
+    .panel p { margin:2px 0; font-size:12px; color:#334155; }
+    .title { font-weight:700; font-size:18px; color:#111827; margin-bottom:8px; }
+    .meta { margin-bottom:10px; color:#374151; }
+    .subtype { margin-bottom:18px; font-size:14px; }
+    .app-type { margin-bottom:6px; font-size:13px; color:#1f2937; }
+    .section-title { margin-bottom:8px; font-weight:700; }
+    table { width:100%; border-collapse: collapse; border: 1px solid #e5e7eb; }
+    td { border:1px solid #e5e7eb; padding:8px 10px; font-size:13px; }
+    td:first-child { background:#f9fafb; font-weight:600; width:30%; }
+    ul { margin:4px 0 0 18px; padding:0; color:#111827; }
+    .block { margin-top:20px; padding:12px; border-radius:8px; }
+    .block.note { background:#f7f9fc; border:1px solid #e2e8f0; }
+    .block.attest { background:#fff7ed; border:1px solid #f5d1a1; }
+    .block h5 { margin:0 0 6px; font-size:13px; }
+    .policy { margin-top:16px; font-size:12px; color:#334155; line-height:1.4; }
+    .signature { margin-top:12px; border:1px solid #e2e8f0; background:#f9fafb; border-radius:6px; padding:10px; }
+    .signature img { max-width:240px; height:auto; border:1px solid #cbd5e1; border-radius:5px; }
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+    <div class="header">
+      <div class="header-left">
+        <div class="brand">PROMINENCE BANK CORP.</div>
+        <div class="contact">account@prominencebank.com</div>
+      </div>
+      <div class="header-right"><img src="https://prominencebank.com/Prominence%20Bank.png" alt="Prominence Bank" /></div>
+    </div>
+    <div class="content">
+      <div class="panel" style="margin-bottom:12px;">
+          <div class="h4">Admin Email Header</div>
+          <p>From: Prominence Bank Corp. &lt;account@prominencebank.com&gt;</p>
+          <p>To: admin@example.com</p>
+          <p>Subject: New Form Entry #APP-1234 for Personal Bank Account</p>
+          <p>Date: March 18, 2026</p>
+          <p>Application ID: APP-1234</p>
+        </div>
+      <div class="title">You have a new website form submission</div>
+      <div class="meta">Application ID: <strong>APP-1234</strong></div>
+      <div class="subtype">Personal Account application form</div>
+      <div class="app-type">Application Type: <strong>Personal</strong></div>
+      <div class="section-title">Applicant</div>
+      <div style="margin-bottom:16px;">Name: John Doe | Email: user@example.com</div>
+      <div class="section-title">Submitted Information</div>
+      <table>
+        <tr><td>First Name</td><td>John</td></tr>
+        <tr><td>Last Name</td><td>Doe</td></tr>
+        <tr><td>Account Type</td><td>Numbered Account</td></tr>
+        <tr><td>Payment Method</td><td>SWIFT</td></tr>
+      </table>
+      <div class="section-title" style="margin-top:16px;">Uploaded Documents</div>
+      <ul>
+        <li><a href="#">passport.pdf</a></li>
+        <li><a href="#">payment-proof.pdf</a></li>
+      </ul>
+
+      <div class="block note">
+        <h5>KYC/AML Documentation Note (Step 8)</h5>
+        <p>Please ensure all documents are clear and valid. PCM may assist with intake and document coordination and transmit the compiled package to Prominence Bank. Prominence Bank may request additional documentation or enhanced due diligence at any time. Incomplete or inconsistent information may delay processing or result in application decline.</p>
+        <p>Insert Full Color Photo of your Passport Here *</p>
+        <p>ACCOUNT OPENING FEE — PAYMENT INSTRUCTIONS</p>
+        <p>Applicable to all new account types listed below.</p>
+        <p>Account Opening Fee (Onboarding & Compliance Processing Fee) does not guarantee approval or account opening.</p>
+        <p>€25,000 – Euro Account<br>$25,000 – USD Account<br>€25,000 – Custody Account<br>€25,000 – Cryptocurrency Account<br>€50,000 – Numbered Account</p>
+        <p><strong>REFUND POLICY (NO EXCEPTIONS)</strong></p>
+        <p>If application is declined and no account opened, fee refunded in full by PCM (no PCM deductions). Intermediary charges outside PCM control may apply. Refunds issued to original sender within 10 business days after formal declined status.</p>
+        <p>If approved and account opened, fee is non-refundable.</p>
+        <p><strong>PAYMENT OPTION 1: INTERNATIONAL WIRE (SWIFT)</strong></p>
+        <p>EURO (€) CURRENCY: Bank Name: Wise Europe; Bank Address: Rue du Trône 100, 3rd floor. Brussels. 1050. Belgium; SWIFT: TRWIBEB1XXX; Account Name: PROMINENCE CLIENT MANAGEMENT; IBAN: BE31905717979455; Reference: Application ID: APP-1234 | Onboarding and Compliance Processing Fee.</p>
+        <p>USD ($) CURRENCY: Bank Name: Wise US Inc.; Bank Address: 108 W 13th St, Wilmington, DE, 19801, United States; SWIFT: TRWIUS35XXX; Account Name: PROMINENCE CLIENT MANAGEMENT; Account Number: 205414015428310; Reference: Application ID: APP-1234 | Onboarding and Compliance Processing Fee.</p>
+        <p><strong>PAYMENT OPTION 2: CRYPTOCURRENCY (USDT TRC20)</strong></p>
+        <p>USDT Wallet Address (TRC20): TPYjSzK3BbZRZAVhBoRZcdyzKpQ9NN6S6Y. Crypto accepted only for account opening fee; provide TXID, amount, sender wallet, timestamp, and screenshot if available.</p>
+        <p><strong>IMPORTANT NOTICE:</strong> Fee must be paid via SWIFT or USDT. KTT/Telex not accepted.</p>
+      </div>
+
+      <div class="block attest">
+        <h5>Agreed and Attested (Step 9)</h5>
+        <p><strong>A. Mandatory Submission Requirements:</strong> Application may be rejected without substantive review if mandatory items are missing, including full opening fee, valid payment proof, required documentation, disclosures, and support materials.</p>
+        <p><strong>B. Payment Instructions:</strong> Only SWIFT or USDT accepted. KTT/Telex strictly prohibited. Application ID must be included in reference.</p>
+        <p><strong>C. Account Opening Requirements:</strong> Maintain minimum balance and policy adherence; risk of restriction for non-compliance.</p>
+        <p><strong>D. Finality of Account Type:</strong> Selection is final for this application; conversion requires a new application.</p>
+        <p><strong>E. Transaction Profile:</strong> Activity should align with declared profile; material deviations may trigger due diligence.</p>
+        <p>By signing and submitting, applicant attests information is true, accurate, complete, and authorizes bank verification, AML/KYC, and compliance screening.</p>
+      </div>
+
+      <div class="policy">Policy notice: this email is for application submission and record purposes. The bank retains rights to verify information, reject or approve applications, and enforce compliance.</div>
+      <div class="signature">
+        <div style="font-weight:700; margin-bottom:4px;">Signature</div>
+        <img src="https://via.placeholder.com/240x80?text=Signature" alt="Signature" />
+      </div>
+    </div>
+  </div>
+</body>
+</html>

@@ -18,6 +18,29 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(true);
   const [applications, setApplications] = useState<any[]>([]);
   const [selectedApp, setSelectedApp] = useState<any>(null);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
+
+  const handleExportPdf = async (appId: number) => {
+    setExporting(true);
+    setExportError(null);
+    try {
+      const response = await fetch(`http://3.14.204.157/wp-json/faap/v1/applications/${appId}/export-pdf`, {
+        method: 'GET',
+      });
+      const data = await response.json();
+      if (response.ok && data?.pdfUrl) {
+        window.open(data.pdfUrl, '_blank');
+      } else {
+        throw new Error(data?.message || 'Failed to generate PDF');
+      }
+    } catch (error) {
+      setExportError(error instanceof Error ? error.message : 'PDF export failed.');
+    } finally {
+      setExporting(false);
+    }
+  };
+
   const handleVerifyPayment = async (appId: number) => {
     try {
       const response = await fetch(`http://3.14.204.157/wp-json/faap/v1/applications/${appId}/payment-verified`, {
@@ -115,6 +138,7 @@ export default function AdminPage() {
                     <TableRow className="bg-slate-50/50">
                       <TableHead className="font-bold text-[10px] uppercase tracking-widest pl-8">Date</TableHead>
                       <TableHead className="font-bold text-[10px] uppercase tracking-widest">Application ID</TableHead>
+                      <TableHead className="font-bold text-[10px] uppercase tracking-widest">Client IP</TableHead>
                       <TableHead className="font-bold text-[10px] uppercase tracking-widest">Type</TableHead>
                       <TableHead className="font-bold text-[10px] uppercase tracking-widest">Client Name / Entity</TableHead>
                       <TableHead className="font-bold text-[10px] uppercase tracking-widest">Status</TableHead>
@@ -130,6 +154,7 @@ export default function AdminPage() {
                       <TableRow key={app.id} className="hover:bg-slate-50/30 group">
                         <TableCell className="pl-8 text-xs font-medium">{new Date(app.submittedAt).toLocaleDateString()}</TableCell>
                         <TableCell className="text-xs font-bold text-primary">{app.applicationId}</TableCell>
+                        <TableCell className="text-xs">{app.ipAddress || 'N/A'}</TableCell>
                         <TableCell><Badge variant="outline" className="text-[9px] uppercase font-bold tracking-tighter">{app.type}</Badge></TableCell>
                         <TableCell className="text-xs font-bold text-primary">{app.formData?.fullName || app.formData?.entityName || "Anonymous Request"}</TableCell>
                         <TableCell><Badge className={cn("text-[8px] uppercase tracking-widest", app.status === 'Payment Verified' ? "bg-emerald-500" : app.status === 'Approved' ? "bg-blue-500" : "bg-amber-500")}>{app.status || 'Pending'}</Badge></TableCell>
@@ -181,23 +206,29 @@ export default function AdminPage() {
                 Submission Review
               </DialogTitle>
             </DialogHeader>
-            <div className="py-8 space-y-10">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
-                <div className="space-y-4">
-                  <h4 className="text-[10px] font-bold text-primary uppercase tracking-[0.2em] border-l-2 border-accent pl-2">Client Identity Payload</h4>
-                  <div className="bg-muted/30 p-5 rounded-2xl space-y-3">
-                    {Object.entries(selectedApp?.formData || {}).filter(([key, val]) => typeof val !== 'object').map(([key, value]) => (
-                      <div key={key} className="flex justify-between border-b border-white/50 pb-1.5">
-                        <span className="text-[9px] text-muted-foreground uppercase font-medium">{key}</span>
-                        <span className="text-[11px] font-bold text-primary">{String(value)}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
+            <div className="py-6 space-y-4">
+              <div className="flex flex-wrap gap-3 text-[11px] text-slate-800">
+                <div className="bg-slate-100 rounded-xl px-3 py-2 font-semibold">Application ID: {selectedApp?.applicationId}</div>
+                <div className="bg-slate-100 rounded-xl px-3 py-2 font-semibold">Status: {selectedApp?.status || 'Pending'}</div>
+                <div className="bg-slate-100 rounded-xl px-3 py-2 font-semibold">Client IP: {selectedApp?.ipAddress || 'N/A'}</div>
               </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {(selectedApp?.formData ? Object.entries(selectedApp?.formData) : []).filter(([key, val]) => typeof val !== 'object' && key !== 'applicationData').map(([key, value]) => (
+                  <div key={key} className="rounded-xl border border-slate-200 p-2 flex justify-between gap-2">
+                    <span className="text-[10px] text-slate-500 uppercase tracking-wide">{key}</span>
+                    <span className="text-[10px] font-semibold text-slate-900">{String(value)}</span>
+                  </div>
+                ))}
+              </div>
+              {exportError ? <div className="text-xs text-red-500">{exportError}</div> : null}
             </div>
             <DialogFooter className="border-t pt-6 gap-3">
-              <Button variant="outline" className="rounded-full gap-2 text-[10px] uppercase font-bold px-8 h-10"><Download className="w-4 h-4" /> Download PDF</Button>
+              <Button variant="secondary" size="sm" className="rounded-full gap-2 text-[10px] uppercase font-bold px-4 h-9" disabled={!selectedApp || exporting} onClick={() => selectedApp && handleExportPdf(selectedApp.id)}>
+                <Download className="w-4 h-4" /> {exporting ? 'Generating PDF...' : 'Export Email PDF'}
+              </Button>
+              <Button variant="ghost" size="sm" className="rounded-full gap-2 text-[10px] uppercase font-bold px-4 h-9" onClick={() => setSelectedApp(null)}>
+                Close
+              </Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>

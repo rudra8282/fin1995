@@ -248,14 +248,22 @@ export function StepRenderer() {
   }, [currentStep]);
 
   const startDrawing = (e: React.MouseEvent | React.TouchEvent) => {
+    if (!canvasRef.current) return;
     setIsDrawing(true);
-    draw(e);
+    const canvas = canvasRef.current;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    const rect = canvas.getBoundingClientRect();
+    const x = 'touches' in e ? e.touches[0].clientX - rect.left : (e as React.MouseEvent).clientX - rect.left;
+    const y = 'touches' in e ? e.touches[0].clientY - rect.top : (e as React.MouseEvent).clientY - rect.top;
+    ctx.beginPath();
+    ctx.moveTo(x, y);
   };
 
   const stopDrawing = () => {
     setIsDrawing(false);
     if (canvasRef.current) {
-      const dataUrl = canvasRef.current.toDataURL();
+      const dataUrl = canvasRef.current.toDataURL('image/jpeg', 0.9);
       updateData({ attestation: { ...data.attestation, signatureImage: dataUrl } });
     }
   };
@@ -267,8 +275,8 @@ export function StepRenderer() {
     if (!ctx) return;
 
     const rect = canvas.getBoundingClientRect();
-    const x = ('touches' in e) ? e.touches[0].clientX - rect.left : (e as React.MouseEvent).clientX - rect.left;
-    const y = ('touches' in e) ? e.touches[0].clientY - rect.top : (e as React.MouseEvent).clientY - rect.top;
+    const x = 'touches' in e ? e.touches[0].clientX - rect.left : (e as React.MouseEvent).clientX - rect.left;
+    const y = 'touches' in e ? e.touches[0].clientY - rect.top : (e as React.MouseEvent).clientY - rect.top;
 
     ctx.lineTo(x, y);
     ctx.stroke();
@@ -389,7 +397,7 @@ export function StepRenderer() {
           <div className="bg-amber-50 border border-amber-200 rounded-lg p-6">
             <h4 className="text-md font-bold text-amber-800 mb-3">📋 REQUIRED DOCUMENTS</h4>
             <ul className="text-sm text-amber-700 space-y-1">
-              <li>• Passport/ID photo (full color, clear image)</li>
+              <li>• Valid ID/passport or equivalent document</li>
               <li>• Proof of payment for account opening fee</li>
               <li>• All documents must be uploaded before submission</li>
             </ul>
@@ -397,7 +405,7 @@ export function StepRenderer() {
 
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label className="text-sm font-bold uppercase tracking-wider">Insert Full Color Photo of your Passport Here *</Label>
+              <Label className="text-sm font-bold uppercase tracking-wider">Insert Full Color Photo of your Passport or ID *</Label>
               <div className="relative group">
                 <Input
                   type="file"
@@ -406,7 +414,7 @@ export function StepRenderer() {
                     const file = e.target.files?.[0];
                     updateData({
                       passportPhoto: file,
-                      mainDocumentFile: file,
+                      passportPhotoFile: file,
                     });
                   }}
                   accept=".jpg,.jpeg,.png,.pdf"
@@ -415,12 +423,11 @@ export function StepRenderer() {
                 <div className="h-24 border-2 border-dashed rounded-sm flex flex-col items-center justify-center gap-2 bg-white group-hover:bg-slate-50 transition-all shadow-sm">
                   <Upload className="w-6 h-6 text-slate-400" />
                   <span className="text-[11px] font-normal text-slate-500">
-                    {data.passportPhoto ? `${data.passportPhoto.name || 'File uploaded ✓'}` : "Upload passport photo (JPG, PNG, PDF)"}
+                    {data.passportPhoto ? `${data.passportPhoto.name || 'File uploaded ✓'}` : "Upload passport/ID file (JPG, PNG, PDF)"}
                   </span>
                 </div>
               </div>
             </div>
-
             <div className="space-y-2">
               <Label className="text-sm font-bold uppercase tracking-wider">Insert Full Color Photo of your Offshore Account Opening Fees Payment *</Label>
               <div className="relative group">
@@ -503,7 +510,7 @@ export function StepRenderer() {
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             <Input
               value={data.attestation?.signatureName || ''}
               onChange={(e) => updateData({ attestation: { ...data.attestation, signatureName: e.target.value } })}
@@ -514,6 +521,12 @@ export function StepRenderer() {
               value={data.attestation?.idNumber || ''}
               onChange={(e) => updateData({ attestation: { ...data.attestation, idNumber: e.target.value } })}
               placeholder="ID Number (Passport/ID)"
+              className="h-10"
+            />
+            <Input
+              type="date"
+              value={data.attestation?.signatureDate || ''}
+              onChange={(e) => updateData({ attestation: { ...data.attestation, signatureDate: e.target.value } })}
               className="h-10"
             />
           </div>
@@ -551,7 +564,7 @@ export function StepRenderer() {
         <p className="text-slate-400 text-[13px] font-normal">{activeStepData.description}</p>
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {activeStepData.fields.map((field) => (
+        {activeStepData.fields.map((field: any) => (
           <div key={field.id} className={cn("space-y-2", field.width === 'half' ? '' : 'md:col-span-2')}>
             <Label htmlFor={field.name} className="text-sm font-bold uppercase tracking-wider flex items-center gap-2">
               {field.label}
@@ -606,7 +619,7 @@ export function StepRenderer() {
                 required={field.required}
               >
                 <option value="">Select...</option>
-                {field.options?.map((option) => (
+                {field.options?.map((option: any) => (
                   <option key={option} value={option}>{option}</option>
                 ))}
               </select>

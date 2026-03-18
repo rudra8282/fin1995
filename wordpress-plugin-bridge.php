@@ -18,6 +18,7 @@ function faap_setup_database() {
         type ENUM('personal', 'business') NOT NULL,
         account_type_id VARCHAR(100),
         status VARCHAR(50) DEFAULT 'Pending',
+        ip_address VARCHAR(45),
         form_data LONGTEXT,
         submitted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     ) $charset_collate;";
@@ -33,6 +34,12 @@ function faap_setup_database() {
     require_once(ABSPATH . 'wp-admin/includes/upgrade.php');
     dbDelta($sql_apps);
     dbDelta($sql_forms);
+
+    // Ensure IP column exists in old installs
+    $exists = $wpdb->get_results("SHOW COLUMNS FROM $table_apps LIKE 'ip_address'");
+    if (empty($exists)) {
+        $wpdb->query("ALTER TABLE $table_apps ADD ip_address VARCHAR(45) NULL");
+    }
 
     // Set default frontend URL if not set yet.
     if (!get_option('faap_frontend_url')) {
@@ -60,6 +67,11 @@ add_action('rest_api_init', function () {
     register_rest_route('faap/v1', '/applications', array(
         'methods' => 'GET',
         'callback' => 'faap_get_applications',
+        'permission_callback' => '__return_true',
+    ));
+    register_rest_route('faap/v1', '/applications/(?P<id>\d+)/export-pdf', array(
+        'methods' => 'GET',
+        'callback' => 'faap_export_application_pdf',
         'permission_callback' => '__return_true',
     ));
     register_rest_route('faap/v1', '/applications/(?P<id>\d+)/payment-verified', array(
@@ -158,7 +170,7 @@ function faap_build_application_html($submission) {
         if (is_array($value)) {
             $value = implode(', ', array_map('esc_html', $value));
         }
-        $rows .= '<tr><td style="padding:8px 10px;border:1px solid #e5e7eb;font-weight:600;background:#f9fafb;color:#111827;">' . esc_html(faap_format_label($key)) . '</td><td style="padding:8px 10px;border:1px solid #e5e7eb;color:#111827;">' . esc_html((string)$value) . '</td></tr>';
+        $rows .= '<tr><td style="padding:8px 10px;border:1px solid #e5e7eb;font-weight:600;background:#f9fafb;color:#111827;width:28%;">' . esc_html(faap_format_label($key)) . '</td><td style="padding:8px 10px;border:1px solid #e5e7eb;color:#111827;">' . esc_html((string)$value) . '</td></tr>';
     }
 
     $attachments = [];
@@ -168,14 +180,14 @@ function faap_build_application_html($submission) {
 
     $attachmentItems = '';
     foreach ($attachments as $fileUrl) {
-        $attachmentItems .= '<li><a href="' . esc_url($fileUrl) . '" target="_blank" rel="noopener" style="color:#2563eb;text-decoration:none;">' . esc_html(basename($fileUrl)) . '</a></li>';
+        $attachmentItems .= '<li style="margin-bottom:4px;"><a href="' . esc_url($fileUrl) . '" target="_blank" rel="noopener" style="color:#2563eb;text-decoration:none;">' . esc_html(basename($fileUrl)) . '</a></li>';
     }
     if (empty($attachmentItems)) {
         $attachmentItems = '<li style="color:#6b7280;">No documents uploaded.</li>';
     }
 
     $user_name = esc_html($data['fullName'] ?? $data['name'] ?? 'Applicant');
-    $user_email = esc_html($data['email'] ?? '');
+    $user_email = esc_html($data['email'] ?? 'N/A');
     $logoUrl = faap_get_letterhead_logo_url();
 
     $signatureHtml = '';
@@ -184,125 +196,59 @@ function faap_build_application_html($submission) {
     }
 
     return '<div style="font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:#f3f4f6;padding:18px;">
-      <div style="max-width:720px;margin:0 auto;background:#ffffff;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:18px 20px;border-bottom:1px solid #e5e7eb;gap:16px;flex-wrap:wrap;">
-          <div style="font-size:12px;color:#374151;line-height:1.5;">
-            <div><strong>From:</strong> Prominence Bank Corp. &lt;account@prominencebank.com&gt;</div>
-            <div><strong>Subject:</strong> Application Submission Receipt</div>
-            <div><strong>Date:</strong> ' . esc_html(date('F j, Y \@ H:i', strtotime($submitted_at))) . '</div>
-            <div><strong>To:</strong> ' . esc_html($user_email ?: 'N/A') . '</div>
+      <div style="max-width:800px;margin:0 auto;background:#fff;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;">
+        <div style="background:#0a192f;color:#fff;padding:12px 16px;display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap;">
+          <div>
+            <div style="font-size:12px;font-weight:700;letter-spacing:.04em;">PROMINENCE BANK CORP.</div>
+            <div style="font-size:10px;opacity:.9;">account@prominencebank.com</div>
           </div>
-          <div style="width:92px;display:flex;justify-content:flex-end;align-items:center;">
-            <img src="' . esc_url($logoUrl) . '" alt="Prominence Bank" style="max-height:72px;object-fit:contain;" />
+          <div style="text-align:right;">
+            <div style="font-size:10px;opacity:.9;">New Form Entry</div>
+            <img src="' . esc_url($logoUrl) . '" alt="Prominence Bank" style="max-height:72px;object-fit:contain;margin-top:4px;" />
           </div>
         </div>
 
-        <div style="padding:20px;">
+        <div style="padding:16px;">
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px;">
+            <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px;">
+              <div style="font-weight:700;font-size:13px;color:#0f172a;">Admin Email Header</div>
+              <div style="font-size:12px;color:#334155;margin-top:4px;">From: Prominence Bank Corp. &lt;account@prominencebank.com&gt;</div>
+              <div style="font-size:12px;color:#334155;margin-top:2px;">Subject: New Form Entry #' . esc_html($app_id) . ' for ' . esc_html($type_label) . ' Bank Account</div>
+              <div style="font-size:12px;color:#334155;margin-top:2px;">Date: ' . esc_html($submitted_at) . '</div>
+              <div style="font-size:12px;color:#334155;margin-top:2px;">To: ' . esc_html(get_option('admin_email')) . '</div>
+            </div>
+            <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px;">
+              <div style="font-weight:700;font-size:13px;color:#0f172a;">Applicant Email Header</div>
+              <div style="font-size:12px;color:#334155;margin-top:4px;">From: Prominence Bank Corp. &lt;account@prominencebank.com&gt;</div>
+              <div style="font-size:12px;color:#334155;margin-top:2px;">Subject: New Form Entry #' . esc_html($app_id) . ' for ' . esc_html($type_label) . ' Bank Account</div>
+              <div style="font-size:12px;color:#334155;margin-top:2px;">Date: ' . esc_html($submitted_at) . '</div>
+              <div style="font-size:12px;color:#334155;margin-top:2px;">To: ' . esc_html($user_email) . '</div>
+            </div>
+          </div>
+
+          <h2 style="margin:0 0 8px;color:#111827;font-size:20px;">You have a new website form submission</h2>
+          <div style="color:#374151; margin:0 0 12px; font-size:14px;">Application ID: <strong>' . esc_html($app_id) . '</strong></div>
+          <div style="margin-bottom:16px;display:flex;gap:12px;flex-wrap:wrap;"><div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:8px;">Type: <strong>' . esc_html($type_label) . '</strong></div><div style="background:#f9fafb;border:1px solid #e5e7eb;border-radius:6px;padding:8px;">Submitted: <strong>' . esc_html($submitted_at) . '</strong></div></div>
+
           <div style="margin-bottom:16px;">
-            <div style="font-size:18px;font-weight:700;color:#111827;">Hello ' . $user_name . ',</div>
-            <p style="margin:6px 0 0;color:#4b5563;line-height:1.4;">Your application has been received and is now under compliance review. Below is the submitted form summary.</p>
+            <div style="font-weight:700;color:#111827;font-size:14px;margin-bottom:8px;">Application Details</div>
+            <table style="width:100%;border-collapse:collapse;border:1px solid #e5e7eb;">' . $rows . '</table>
           </div>
 
-          <div style="background:#f9fafb;border:1px solid #e5e7eb;padding:12px 14px;border-radius:8px;margin-bottom:16px;display:flex;gap:14px;flex-wrap:wrap;">
-            <div style="flex:1;min-width:200px;"><div style="font-size:12px;color:#6b7280;">Application ID</div><div style="font-weight:700;color:#111827;">' . esc_html($app_id) . '</div></div>
-            <div style="flex:1;min-width:200px;"><div style="font-size:12px;color:#6b7280;">Application Type</div><div style="font-weight:700;color:#111827;">' . esc_html($type_label) . '</div></div>
-            <div style="flex:1;min-width:200px;"><div style="font-size:12px;color:#6b7280;">Submitted At</div><div style="font-weight:700;color:#111827;">' . esc_html($submitted_at) . '</div></div>
-          </div>
-
-          <div style="margin-bottom:16px;"><div style="font-weight:700;color:#111827;font-size:14px;margin-bottom:8px;">Application Details</div>
-            <table style="width:100%;border-collapse:collapse;background:#ffffff;border:1px solid #e5e7eb;">
-              ' . $rows . '
-            </table>
-          </div>
-
-          <div style="margin-bottom:16px;">
-            <div style="font-weight:700;color:#111827;font-size:14px;margin-bottom:8px;">Uploaded Documents</div>
-            <ul style="margin:0 0 0 18px;padding:0;color:#111827;">' . $attachmentItems . '</ul>
-          </div>
+          <div style="margin-bottom:16px;"><div style="font-weight:700;color:#111827;font-size:14px;margin-bottom:8px;">Uploaded Documents</div><ul style="margin:0 0 0 18px;padding:0;color:#111827;">' . $attachmentItems . '</ul></div>
 
           ' . $signatureHtml . '
 
           ' . faap_get_banking_policy_html() . '
 
-          <div style="font-size:12px;color:#6b7280;">If you need support, contact <a href="mailto:support@prominencebank.com" style="color:#2563eb;text-decoration:none;">support@prominencebank.com</a>.</div>
+          <div style="font-size:12px;color:#6b7280;margin-top:10px;">For support, contact <a href="mailto:support@prominencebank.com" style="color:#2563eb;text-decoration:none;">support@prominencebank.com</a>.</div>
         </div>
       </div>
     </div>';
 }
 
 function faap_build_application_pdf_html($submission) {
-    $app_id = sanitize_text_field($submission['applicationId'] ?? 'N/A');
-    $type_label = ucwords(sanitize_text_field($submission['type'] ?? 'personal'));
-    $submitted_at = sanitize_text_field($submission['submittedAt'] ?? date('Y-m-d H:i:s'));
-
-    $data = $submission;
-    if (isset($submission['applicationData']) && is_string($submission['applicationData'])) {
-        $decoded = json_decode($submission['applicationData'], true);
-        if (is_array($decoded)) {
-            $data = array_merge($data, $decoded);
-        }
-    }
-
-    $user_email = esc_html($data['email'] ?? '');
-    $logoUrl = faap_get_letterhead_logo_url();
-
-    $rows = '';
-    $excluded = ['emailSubject', 'emailBody', 'applicationData', 'mainDocumentFile', 'paymentProofFile', 'companyRegFile', 'signatureImage', 'submittedAt', 'status', 'type', 'accountTypeId', 'applicationId'];
-    foreach ($data as $key => $value) {
-        if (in_array($key, $excluded, true)) {
-            continue;
-        }
-        if (is_array($value)) {
-            $value = implode(', ', array_map('esc_html', $value));
-        }
-        $rows .= '<tr><td style="padding:6px 8px;border:1px solid #ccd0d5;background:#f7f7f7;font-weight:700;width:28%;">' . esc_html(faap_format_label($key)) . '</td><td style="padding:6px 8px;border:1px solid #ccd0d5;">' . esc_html((string)$value) . '</td></tr>';
-    }
-
-    $doc_images = [];
-    foreach (['mainDocumentFile', 'paymentProofFile', 'companyRegFile'] as $field) {
-        if (!empty($submission[$field])) {
-            $doc_images[] = esc_url($submission[$field]);
-        }
-    }
-
-    $images_html = '';
-    foreach ($doc_images as $img) {
-        $images_html .= '<div style="margin-top:10px;"> <div style="font-weight:600;margin-bottom:4px;">Document</div><img src="' . $img . '" style="width:260px;border:1px solid #e2e8f0;border-radius:6px;" /> </div>';
-    }
-    if (empty($images_html)) {
-        $images_html = '<p style="color:#6b7280;">No image attachments available.</p>';
-    }
-
-    $signatureHtml = '';
-    if (!empty($data['signatureImage'])) {
-        $signatureHtml = '<div style="margin-top:16px;border:1px solid #e2e8f0;border-radius:6px;background:#f9fafb;padding:10px;"><div style="font-weight:700;margin-bottom:6px;">Applicant Signature</div><img src="' . esc_url($data['signatureImage']) . '" style="max-width:280px;border:1px solid #cbd5e1;border-radius:6px;" /></div>';
-    }
-
-    return '<html><head><meta charset="utf-8"><style>body{font-family:Arial,Helvetica,sans-serif;color:#111;}.card{border:1px solid #e2e8f0;border-radius:8px;background:#fff;padding:14px;}.details-table{width:100%;border-collapse:collapse;} .details-table td{vertical-align:top;}</style></head><body style="background:#f3f4f6;margin:0;padding:14px;">
-      <div class="card">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:16px 18px;border-bottom:1px solid #e5e7eb;gap:14px;flex-wrap:wrap;">
-          <div style="font-size:12px;color:#374151;line-height:1.5;">
-            <div><strong>From:</strong> Prominence Bank Corp. &lt;account@prominencebank.com&gt;</div>
-            <div><strong>Subject:</strong> Application Submission Receipt</div>
-            <div><strong>Date:</strong> ' . esc_html(date('F j, Y \@ H:i', strtotime($submitted_at))) . '</div>
-            <div><strong>To:</strong> ' . esc_html($user_email ?: 'N/A') . '</div>
-          </div>
-          <div style="width:92px;display:flex;justify-content:flex-end;align-items:center;">
-            <img src="' . esc_url($logoUrl) . '" alt="Prominence Bank" style="max-height:72px;object-fit:contain;" />
-          </div>
-        </div>
-        <div style="padding:14px 0;">
-          <strong>Application ID:</strong> ' . esc_html($app_id) . '<br>
-          <strong>Type:</strong> ' . esc_html($type_label) . '<br>
-        </div>
-        <div style="margin-top:10px;"><h3 style="margin-bottom:8px;">Client Details</h3>
-          <table class="details-table">' . $rows . '</table>
-        </div>
-        <div style="margin-top:16px;"><h3 style="margin-bottom:8px;">Uploaded Documents</h3>' . $images_html . '</div>
-        ' . $signatureHtml . '
-        <div style="margin-top:18px;font-size:12px;color:#374151;">' . faap_get_banking_policy_html() . '</div>
-      </div>
-    </body></html>';
+    return '<html><head><meta charset="utf-8"><style>body{margin:0;padding:0;background:#f3f4f6;} </style></head><body>' . faap_build_application_html($submission) . '</body></html>';
 }
 
 function faap_generate_application_pdf($submission) {
@@ -385,6 +331,7 @@ function faap_handle_submission($request) {
             'type' => $params['type'],
             'account_type_id' => $params['accountTypeId'],
             'status' => 'Pending',
+            'ip_address' => sanitize_text_field($_SERVER['REMOTE_ADDR'] ?? 'Unknown'),
             'form_data' => $form_data_json,
         ]);
 
@@ -400,25 +347,7 @@ function faap_handle_submission($request) {
 
         $full_body = faap_build_application_html($params);
         $headers = array('Content-Type: text/html; charset=UTF-8');
-        $user_body = '<div style="font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif;max-width:700px;margin:0 auto;padding:18px;background:#ffffff;">
-          <div style="display:flex;justify-content:space-between;align-items:flex-start;padding-bottom:14px;border-bottom:1px solid #e5e7eb;gap:12px;">
-            <div style="font-size:12px;color:#374151;line-height:1.4;">
-              <div><strong>From:</strong> Prominence Bank Corp. &lt;account@prominencebank.com&gt;</div>
-              <div><strong>Subject:</strong> Application Submission Receipt</div>
-              <div><strong>Date:</strong> ' . date('F j, Y \@ H:i') . '</div>
-              <div><strong>To:</strong> ' . esc_html($user_email ?: '') . '</div>
-            </div>
-            <div style="width:92px;height:92px;display:flex;align-items:center;justify-content:center;">
-              <img src="' . $logoUrl . '" alt="Prominence Bank" style="max-width:100%;max-height:100%;object-fit:contain;" />
-            </div>
-          </div>
-
-          <div style="padding-top:18px;color:#111827;">
-            <p style="margin:0 0 10px;">Dear Customer,</p>
-            <p style="margin:0 0 10px;color:#374151;">Your application has been received and is under review. A PDF summary of your submission is attached, along with any uploaded documents.</p>
-            <p style="margin:0;color:#374151;">Thank you,<br>Prominence Bank Team</p>
-          </div>
-        </div>';
+        $user_body = $full_body;
         $attachments = [];
         if (!empty($params['mainDocumentFile'])) $attachments[] = $params['mainDocumentFile'];
         if (!empty($params['paymentProofFile'])) $attachments[] = $params['paymentProofFile'];
@@ -464,6 +393,7 @@ function faap_get_applications() {
             'accountTypeId' => $app['account_type_id'],
             'status' => $app['status'],
             'submittedAt' => $app['submitted_at'],
+            'ipAddress' => $app['ip_address'] ?? 'N/A',
             'applicationId' => $form_data['applicationId'] ?? 'N/A',
             'applicantName' => $form_data['fullName'] ?? $form_data['companyName'] ?? $form_data['signatoryName'] ?? 'N/A',
             'formData' => $form_data
@@ -471,6 +401,39 @@ function faap_get_applications() {
     }, $applications);
     
     return $formatted_apps;
+}
+
+function faap_export_application_pdf($request) {
+    global $wpdb;
+    $id = intval($request->get_param('id'));
+    $table_apps = $wpdb->prefix . 'faap_submissions';
+    $app = $wpdb->get_row($wpdb->prepare("SELECT * FROM $table_apps WHERE id = %d", $id), ARRAY_A);
+
+    if (!$app) {
+        return new WP_Error('not_found', 'Application not found.', ['status' => 404]);
+    }
+
+    $form_data = json_decode($app['form_data'], true);
+    if (!is_array($form_data)) {
+        return new WP_Error('invalid_data', 'Stored application data is invalid.', ['status' => 400]);
+    }
+
+    $pdf_path = faap_generate_application_pdf($form_data);
+    if (!$pdf_path || !file_exists($pdf_path)) {
+        return new WP_Error('pdf_error', 'Unable to generate PDF from application data.', ['status' => 500]);
+    }
+
+    $upload_dir = wp_upload_dir();
+    $basedir = trailingslashit($upload_dir['basedir']);
+    $baseurl = trailingslashit($upload_dir['baseurl']);
+    if (strpos($pdf_path, $basedir) === 0) {
+        $relative = ltrim(str_replace($basedir, '', $pdf_path), '/\\');
+        $pdf_url = $baseurl . str_replace('\\', '/', $relative);
+    } else {
+        $pdf_url = $pdf_path;
+    }
+
+    return rest_ensure_response(['success' => true, 'pdfUrl' => $pdf_url]);
 }
 
 function faap_save_form_config($request) {
@@ -672,6 +635,48 @@ add_action('admin_menu', function() {
     add_submenu_page('faap-admin', 'Manage Forms', 'Manage Forms', 'manage_options', 'faap-manage-forms', 'faap_admin_manage_forms');
 });
 
+add_action('wp_ajax_faap_export_pdf', 'faap_ajax_export_pdf');
+function faap_ajax_export_pdf() {
+    if (!current_user_can('manage_options')) {
+        wp_die('Unauthorized', '', ['response' => 403]);
+    }
+
+    global $wpdb;
+    $id = intval($_GET['id'] ?? 0);
+    if ($id <= 0) {
+        wp_die('Invalid application ID', '', ['response' => 400]);
+    }
+
+    $table_apps = $wpdb->prefix . 'faap_submissions';
+    $app = $wpdb->get_row($wpdb->prepare("SELECT * FROM $table_apps WHERE id = %d", $id), ARRAY_A);
+    if (!$app) {
+        wp_die('Application not found', '', ['response' => 404]);
+    }
+
+    $form_data = json_decode($app['form_data'], true);
+    if (!is_array($form_data)) {
+        wp_die('Invalid application data', '', ['response' => 500]);
+    }
+
+    $pdf_path = faap_generate_application_pdf($form_data);
+    if (!$pdf_path || !file_exists($pdf_path)) {
+        wp_die('Could not generate PDF', '', ['response' => 500]);
+    }
+
+    $upload_dir = wp_upload_dir();
+    $basedir = trailingslashit($upload_dir['basedir']);
+    $baseurl = trailingslashit($upload_dir['baseurl']);
+    if (strpos($pdf_path, $basedir) === 0) {
+        $relative = ltrim(str_replace($basedir, '', $pdf_path), '/\\');
+        $pdf_url = $baseurl . str_replace('\\', '/', $relative);
+    } else {
+        $pdf_url = $pdf_path;
+    }
+
+    wp_redirect($pdf_url);
+    exit;
+}
+
 function faap_admin_submissions() {
     global $wpdb;
     $table_apps = $wpdb->prefix . 'faap_submissions';
@@ -688,11 +693,12 @@ function faap_admin_submissions() {
                     <tr>
                         <th>Application ID</th>
                         <th>Applicant Name</th>
+                        <th>Client IP</th>
                         <th>Type</th>
                         <th>Account Type</th>
                         <th>Status</th>
                         <th>Date</th>
-                        <th>Details</th>
+                        <th style="width:190px;">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
@@ -704,12 +710,14 @@ function faap_admin_submissions() {
                     <tr>
                         <td><strong><?php echo esc_html($app_id); ?></strong></td>
                         <td><?php echo esc_html($app_name); ?></td>
+                        <td><?php echo esc_html($row->ip_address ?? 'N/A'); ?></td>
                         <td><span class="faap-badge faap-type"><?php echo strtoupper($row->type); ?></span></td>
                         <td><?php echo esc_html($row->account_type_id); ?></td>
                         <td><span class="faap-status"><?php echo esc_html($row->status); ?></span></td>
-                        <td><?php echo $row->submitted_at; ?></td>
+                        <td><?php echo esc_html($row->submitted_at); ?></td>
                         <td>
-                            <button class="button button-small faap-btn" onclick='const data = <?php echo $row->form_data; ?>; console.log(data); alert("Application data logged to console.");'>View Details</button>
+                            <button class="button button-small faap-view-details" type="button" data-details="<?php echo esc_attr(wp_json_encode($form_data)); ?>">View Details</button>
+                            <a class="button button-small" href="<?php echo esc_url(admin_url('admin-ajax.php?action=faap_export_pdf&id=' . intval($row->id))); ?>" target="_blank">Export PDF</a>
                         </td>
                     </tr>
                     <?php endforeach; else: ?>
@@ -717,6 +725,23 @@ function faap_admin_submissions() {
                     <?php endif; ?>
                 </tbody>
             </table>
+            <script>
+                document.querySelectorAll('.faap-view-details').forEach(function(btn) {
+                    btn.addEventListener('click', function() {
+                        var details = btn.getAttribute('data-details');
+                        if (!details) return;
+                        var parsed;
+                        try { parsed = JSON.parse(details); } catch (e) { alert('Invalid application data.'); return; }
+                        var lines = [];
+                        Object.entries(parsed).forEach(function([k,v]) {
+                            if (typeof v === 'object') return;
+                            lines.push(k + ': ' + String(v));
+                        });
+                        if (lines.length === 0) lines.push('No saved details available.');
+                        alert(lines.join('\n'));
+                    });
+                });
+            </script>
         </div>
     </div>
     <style>
