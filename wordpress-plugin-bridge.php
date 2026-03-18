@@ -178,6 +178,11 @@ function faap_build_application_html($submission) {
     $user_email = esc_html($data['email'] ?? '');
     $logoUrl = faap_get_letterhead_logo_url();
 
+    $signatureHtml = '';
+    if (!empty($data['signatureImage'])) {
+        $signatureHtml = '<div style="border:1px solid #e2e8f0;background:#f9fafb;border-radius:6px;padding:10px;margin-bottom:16px;"><div style="font-weight:700;margin-bottom:4px;">Signature</div><img src="' . esc_url($data['signatureImage']) . '" alt="Signature" style="max-width:240px;height:auto;border:1px solid #cbd5e1;border-radius:5px;" /></div>';
+    }
+
     return '<div style="font-family:Inter,system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Helvetica,Arial,sans-serif;background:#f3f4f6;padding:18px;">
       <div style="max-width:720px;margin:0 auto;background:#ffffff;border:1px solid #e5e7eb;border-radius:10px;overflow:hidden;">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:18px 20px;border-bottom:1px solid #e5e7eb;gap:16px;flex-wrap:wrap;">
@@ -214,6 +219,8 @@ function faap_build_application_html($submission) {
             <div style="font-weight:700;color:#111827;font-size:14px;margin-bottom:8px;">Uploaded Documents</div>
             <ul style="margin:0 0 0 18px;padding:0;color:#111827;">' . $attachmentItems . '</ul>
           </div>
+
+          ' . $signatureHtml . '
 
           ' . faap_get_banking_policy_html() . '
 
@@ -266,6 +273,11 @@ function faap_build_application_pdf_html($submission) {
         $images_html = '<p style="color:#6b7280;">No image attachments available.</p>';
     }
 
+    $signatureHtml = '';
+    if (!empty($data['signatureImage'])) {
+        $signatureHtml = '<div style="margin-top:16px;border:1px solid #e2e8f0;border-radius:6px;background:#f9fafb;padding:10px;"><div style="font-weight:700;margin-bottom:6px;">Applicant Signature</div><img src="' . esc_url($data['signatureImage']) . '" style="max-width:280px;border:1px solid #cbd5e1;border-radius:6px;" /></div>';
+    }
+
     return '<html><head><meta charset="utf-8"><style>body{font-family:Arial,Helvetica,sans-serif;color:#111;}.card{border:1px solid #e2e8f0;border-radius:8px;background:#fff;padding:14px;}.details-table{width:100%;border-collapse:collapse;} .details-table td{vertical-align:top;}</style></head><body style="background:#f3f4f6;margin:0;padding:14px;">
       <div class="card">
         <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:16px 18px;border-bottom:1px solid #e5e7eb;gap:14px;flex-wrap:wrap;">
@@ -287,6 +299,7 @@ function faap_build_application_pdf_html($submission) {
           <table class="details-table">' . $rows . '</table>
         </div>
         <div style="margin-top:16px;"><h3 style="margin-bottom:8px;">Uploaded Documents</h3>' . $images_html . '</div>
+        ' . $signatureHtml . '
         <div style="margin-top:18px;font-size:12px;color:#374151;">' . faap_get_banking_policy_html() . '</div>
       </div>
     </body></html>';
